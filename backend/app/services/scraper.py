@@ -62,8 +62,8 @@ async def scrape_product(url: str) -> dict:
         )
 
         try:
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(2000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_timeout(3000)
 
             # Scroll to trigger lazy loading
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
