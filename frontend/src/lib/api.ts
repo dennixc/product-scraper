@@ -7,7 +7,6 @@ export interface ProductResult {
   description: string;
   description_html: string;
   description_shopline: string;
-  specifications: Record<string, string>;
   source_url: string;
 }
 

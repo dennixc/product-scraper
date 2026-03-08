@@ -38,7 +38,6 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
                 model,
                 raw_data.get("summary", ""),
                 raw_data["description_html"],
-                raw_data.get("specifications", {}),
                 api_key,
                 ai_model,
             )
@@ -50,7 +49,6 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
             description=raw_data.get("description", ""),
             description_html=raw_data.get("description_html", ""),
             description_shopline=shopline_html,
-            specifications=raw_data.get("specifications", {}),
             source_url=raw_data.get("source_url", url),
         )
 

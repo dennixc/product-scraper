@@ -14,7 +14,6 @@ class ProductResult(BaseModel):
     description: str
     description_html: str
     description_shopline: str = ""
-    specifications: dict[str, str]
     source_url: str
 
 class ScrapeStatus(BaseModel):

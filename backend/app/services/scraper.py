@@ -1,6 +1,6 @@
 import re
 import json
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup, Tag, NavigableString
 
@@ -77,21 +77,6 @@ async def scrape_product(url: str) -> dict:
                 await page.wait_for_timeout(1000)
 
             html = await page.content()
-
-            # For ASUS pages: try to fetch techspec sub-page
-            techspec_html = None
-            parsed = urlparse(url)
-            if 'asus.com' in parsed.netloc:
-                techspec_url = url.rstrip('/') + '/techspec/'
-                try:
-                    await page.goto(techspec_url, wait_until="domcontentloaded", timeout=30000)
-                    await page.wait_for_timeout(2000)
-                    # Scroll to load specs
-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    await page.wait_for_timeout(1000)
-                    techspec_html = await page.content()
-                except Exception:
-                    pass
         finally:
             await browser.close()
 
@@ -103,21 +88,12 @@ async def scrape_product(url: str) -> dict:
     description = _extract_description(soup)
     description_html = _extract_description_html(soup)
 
-    # Extract specifications (try techspec page first for ASUS)
-    specifications = {}
-    if techspec_html:
-        techspec_soup = BeautifulSoup(techspec_html, 'lxml')
-        specifications = _extract_specifications(techspec_soup)
-    if not specifications:
-        specifications = _extract_specifications(soup)
-
     return {
         "product_name": product_name,
         "product_model": product_model,
         "summary": summary,
         "description": description,
         "description_html": description_html,
-        "specifications": specifications,
         "source_url": url,
     }
 
@@ -365,67 +341,3 @@ def _extract_description_html(soup: BeautifulSoup) -> str:
     return "\n".join(content_parts)
 
 
-def _extract_specifications(soup: BeautifulSoup) -> dict[str, str]:
-    """Extract product specifications as key-value pairs."""
-    specs = {}
-
-    # Strategy 1: Find spec tables (class/id contains spec, techspec, specification)
-    spec_patterns = re.compile(r'spec|techspec|specification|product-spec', re.IGNORECASE)
-
-    for table in soup.find_all('table', class_=spec_patterns):
-        _extract_specs_from_table(table, specs)
-    if not specs:
-        for table in soup.find_all('table', id=spec_patterns):
-            _extract_specs_from_table(table, specs)
-
-    # Strategy 2: Find any table that looks like a spec table (2 columns, key-value pattern)
-    if not specs:
-        for table in soup.find_all('table'):
-            rows = table.find_all('tr')
-            if len(rows) >= 3:  # At least 3 rows to look like a spec table
-                two_col_count = sum(1 for row in rows if len(row.find_all(['td', 'th'])) == 2)
-                if two_col_count >= len(rows) * 0.6:
-                    _extract_specs_from_table(table, specs)
-                    if specs:
-                        break
-
-    # Strategy 3: Definition lists
-    if not specs:
-        for dl in soup.find_all('dl'):
-            dts = dl.find_all('dt')
-            dds = dl.find_all('dd')
-            for dt, dd in zip(dts, dds):
-                key = dt.get_text(strip=True)
-                val = dd.get_text(strip=True)
-                if key and val:
-                    specs[key] = val
-
-    # Strategy 4: ASUS-style spec rows (div-based spec layout)
-    if not specs:
-        spec_row_patterns = re.compile(r'spec.*row|spec.*item|spec.*list', re.IGNORECASE)
-        for row in soup.find_all(class_=spec_row_patterns):
-            children = row.find_all(['div', 'span', 'dt', 'dd'], recursive=False)
-            if len(children) >= 2:
-                key = children[0].get_text(strip=True)
-                val = children[1].get_text(strip=True)
-                if key and val and len(key) < 100:
-                    specs[key] = val
-
-    return specs
-
-
-def _extract_specs_from_table(table: Tag, specs: dict[str, str]):
-    """Extract key-value pairs from a specification table."""
-    for row in table.find_all('tr'):
-        cells = row.find_all(['td', 'th'])
-        if len(cells) == 2:
-            key = cells[0].get_text(strip=True)
-            val = cells[1].get_text(strip=True)
-            if key and val and len(key) < 100:
-                specs[key] = val
-        elif len(cells) > 2:
-            # Some tables have header + value columns
-            key = cells[0].get_text(strip=True)
-            val = " | ".join(c.get_text(strip=True) for c in cells[1:] if c.get_text(strip=True))
-            if key and val and len(key) < 100:
-                specs[key] = val

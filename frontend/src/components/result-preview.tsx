@@ -31,27 +31,16 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
   const [shoplineView, setShoplineView] = useState<"preview" | "text" | "source">("preview");
   const [htmlCopied, setHtmlCopied] = useState(false);
   const [shoplineCopied, setShoplineCopied] = useState(false);
-  const [specsCopied, setSpecsCopied] = useState(false);
-
-  const specsEntries = Object.entries(result.specifications);
-
-  const copyToClipboard = async (text: string, type: "html" | "shopline" | "specs") => {
+  const copyToClipboard = async (text: string, type: "html" | "shopline") => {
     await navigator.clipboard.writeText(text);
     if (type === "html") {
       setHtmlCopied(true);
       setTimeout(() => setHtmlCopied(false), 2000);
-    } else if (type === "shopline") {
+    } else {
       setShoplineCopied(true);
       setTimeout(() => setShoplineCopied(false), 2000);
-    } else {
-      setSpecsCopied(true);
-      setTimeout(() => setSpecsCopied(false), 2000);
     }
   };
-
-  const specsAsText = specsEntries
-    .map(([k, v]) => `${k}: ${v}`)
-    .join("\n");
 
   return (
     <div className="space-y-4">
@@ -252,40 +241,6 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
                 {result.description_shopline}
               </pre>
             )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Specifications */}
-      {specsEntries.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">規格表</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => copyToClipboard(specsAsText, "specs")}
-              >
-                {specsCopied ? "已複製 ✓" : "複製規格"}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <tbody>
-                  {specsEntries.map(([key, value]) => (
-                    <tr key={key} className="border-b last:border-0">
-                      <td className="py-2 pr-4 font-medium text-muted-foreground whitespace-nowrap align-top">
-                        {key}
-                      </td>
-                      <td className="py-2">{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </CardContent>
         </Card>
       )}
