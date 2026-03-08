@@ -8,6 +8,7 @@ from app.utils.background import create_job, get_job, update_job
 from app.services.scraper import scrape_product
 from app.services.packager import create_package
 from app.services.ai_cleaner import clean_description_with_ai
+from app.services.shopline_formatter import generate_shopline_html
 
 router = APIRouter(prefix="/api")
 
@@ -29,12 +30,26 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
 
         model = product_model or raw_data.get("product_model", "product")
 
+        shopline_html = ""
+        if api_key and raw_data.get("description_html"):
+            update_job(job_id, progress="正在生成 Shopline HTML...")
+            shopline_html = await generate_shopline_html(
+                raw_data.get("product_name", ""),
+                model,
+                raw_data.get("summary", ""),
+                raw_data["description_html"],
+                raw_data.get("specifications", {}),
+                api_key,
+                ai_model,
+            )
+
         result = ProductResult(
             product_name=raw_data.get("product_name", "Unknown"),
             product_model=model,
             summary=raw_data.get("summary", ""),
             description=raw_data.get("description", ""),
             description_html=raw_data.get("description_html", ""),
+            description_shopline=shopline_html,
             specifications=raw_data.get("specifications", {}),
             source_url=raw_data.get("source_url", url),
         )

@@ -28,16 +28,21 @@ interface ResultPreviewProps {
 
 export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
   const [htmlView, setHtmlView] = useState<"preview" | "text" | "source">("preview");
+  const [shoplineView, setShoplineView] = useState<"preview" | "text" | "source">("preview");
   const [htmlCopied, setHtmlCopied] = useState(false);
+  const [shoplineCopied, setShoplineCopied] = useState(false);
   const [specsCopied, setSpecsCopied] = useState(false);
 
   const specsEntries = Object.entries(result.specifications);
 
-  const copyToClipboard = async (text: string, type: "html" | "specs") => {
+  const copyToClipboard = async (text: string, type: "html" | "shopline" | "specs") => {
     await navigator.clipboard.writeText(text);
     if (type === "html") {
       setHtmlCopied(true);
       setTimeout(() => setHtmlCopied(false), 2000);
+    } else if (type === "shopline") {
+      setShoplineCopied(true);
+      setTimeout(() => setShoplineCopied(false), 2000);
     } else {
       setSpecsCopied(true);
       setTimeout(() => setSpecsCopied(false), 2000);
@@ -167,6 +172,84 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
             ) : (
               <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
                 {result.description_html}
+              </pre>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Shopline HTML */}
+      {result.description_shopline && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg">Shopline HTML</CardTitle>
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-md border">
+                  <button
+                    onClick={() => setShoplineView("preview")}
+                    className={`px-3 py-1 text-xs font-medium rounded-l-md transition-colors ${
+                      shoplineView === "preview"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    預覽
+                  </button>
+                  <button
+                    onClick={() => setShoplineView("text")}
+                    className={`px-3 py-1 text-xs font-medium border-x transition-colors ${
+                      shoplineView === "text"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    純文字
+                  </button>
+                  <button
+                    onClick={() => setShoplineView("source")}
+                    className={`px-3 py-1 text-xs font-medium rounded-r-md transition-colors ${
+                      shoplineView === "source"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    原始碼
+                  </button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    copyToClipboard(
+                      shoplineView === "text"
+                        ? htmlToText(result.description_shopline)
+                        : result.description_shopline,
+                      "shopline"
+                    )
+                  }
+                >
+                  {shoplineCopied
+                    ? "已複製 ✓"
+                    : shoplineView === "text"
+                      ? "複製文字"
+                      : "複製 HTML"}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {shoplineView === "preview" ? (
+              <div
+                dangerouslySetInnerHTML={{ __html: result.description_shopline }}
+              />
+            ) : shoplineView === "text" ? (
+              <div className="text-sm whitespace-pre-wrap p-4 bg-muted rounded-md max-h-96 overflow-y-auto">
+                {htmlToText(result.description_shopline)}
+              </div>
+            ) : (
+              <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
+                {result.description_shopline}
               </pre>
             )}
           </CardContent>
