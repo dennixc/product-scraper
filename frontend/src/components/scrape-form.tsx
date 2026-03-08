@@ -11,10 +11,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const API_KEY_STORAGE_KEY = "gemini_api_key";
+const API_KEY_STORAGE_KEY = "openrouter_api_key";
+const AI_MODEL_STORAGE_KEY = "openrouter_ai_model";
+
+const AI_MODELS = [
+  { value: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
+  { value: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
+];
 
 interface ScrapeFormProps {
-  onSubmit: (url: string, productModel?: string, apiKey?: string) => void;
+  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string) => void;
   isLoading: boolean;
 }
 
@@ -22,11 +28,14 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
   const [url, setUrl] = useState("");
   const [productModel, setProductModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [aiModel, setAiModel] = useState(AI_MODELS[0].value);
   const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(API_KEY_STORAGE_KEY);
-    if (saved) setApiKey(saved);
+    const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (savedKey) setApiKey(savedKey);
+    const savedModel = localStorage.getItem(AI_MODEL_STORAGE_KEY);
+    if (savedModel) setAiModel(savedModel);
   }, []);
 
   const handleApiKeyChange = (value: string) => {
@@ -38,10 +47,20 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
     }
   };
 
+  const handleModelChange = (value: string) => {
+    setAiModel(value);
+    localStorage.setItem(AI_MODEL_STORAGE_KEY, value);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
-    onSubmit(url.trim(), productModel.trim() || undefined, apiKey.trim() || undefined);
+    onSubmit(
+      url.trim(),
+      productModel.trim() || undefined,
+      apiKey.trim() || undefined,
+      apiKey.trim() ? aiModel : undefined,
+    );
   };
 
   return (
@@ -102,18 +121,38 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
               AI 內容優化 (optional)
             </button>
             {showApiKey && (
-              <div className="space-y-2 pl-4 border-l-2 border-muted">
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="Gemini API Key"
-                  value={apiKey}
-                  onChange={(e) => handleApiKeyChange(e.target.value)}
-                  disabled={isLoading}
-                />
-                <p className="text-xs text-muted-foreground">
-                  提供 Gemini API Key 啟用 AI 內容去重同優化。Key 會儲存喺瀏覽器。
-                </p>
+              <div className="space-y-3 pl-4 border-l-2 border-muted">
+                <div className="space-y-2">
+                  <Input
+                    id="apiKey"
+                    type="password"
+                    placeholder="OpenRouter API Key"
+                    value={apiKey}
+                    onChange={(e) => handleApiKeyChange(e.target.value)}
+                    disabled={isLoading}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    提供 OpenRouter API Key 啟用 AI 內容去重同優化。Key 會儲存喺瀏覽器。
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="aiModel" className="text-xs font-medium">
+                    AI Model
+                  </label>
+                  <select
+                    id="aiModel"
+                    value={aiModel}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                    disabled={isLoading}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {AI_MODELS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
           </div>

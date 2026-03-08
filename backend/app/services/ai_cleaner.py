@@ -1,4 +1,4 @@
-from google import genai
+from openai import AsyncOpenAI
 
 
 CLEAN_PROMPT = """你係一個商品描述編輯器。以下係從「{product_name}」產品頁面提取嘅 HTML 內容。
@@ -16,26 +16,37 @@ CLEAN_PROMPT = """你係一個商品描述編輯器。以下係從「{product_na
 {raw_html}
 """
 
+DEFAULT_MODEL = "google/gemini-3-flash-preview"
+
 
 async def clean_description_with_ai(
     raw_html: str,
     product_name: str,
     api_key: str,
+    model: str | None = None,
 ) -> str:
-    """用 Gemini 清理 description_html，移除重複/無關內容。
+    """用 OpenRouter AI 清理 description_html，移除重複/無關內容。
 
     如果 AI call 失敗，return 原本嘅 raw_html（graceful fallback）。
     """
     try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=CLEAN_PROMPT.format(
-                product_name=product_name,
-                raw_html=raw_html,
-            ),
+        client = AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
         )
-        cleaned = response.text
+        response = await client.chat.completions.create(
+            model=model or DEFAULT_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": CLEAN_PROMPT.format(
+                        product_name=product_name,
+                        raw_html=raw_html,
+                    ),
+                }
+            ],
+        )
+        cleaned = response.choices[0].message.content
         if cleaned:
             return cleaned
         return raw_html

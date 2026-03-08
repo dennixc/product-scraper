@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api")
 
 JOBS_DIR = "/tmp/scraper_jobs"
 
-async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None):
+async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None):
     try:
         update_job(job_id, progress="Connecting to page...")
         raw_data = await scrape_product(url)
@@ -24,6 +24,7 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
                 raw_data["description_html"],
                 raw_data.get("product_name", ""),
                 api_key,
+                ai_model,
             )
 
         model = product_model or raw_data.get("product_model", "product")
@@ -51,7 +52,7 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
 async def submit_scrape(request: ScrapeRequest):
     job_id = str(uuid.uuid4())
     create_job(job_id)
-    asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key))
+    asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model))
     return {"job_id": job_id, "status": "processing"}
 
 @router.get("/scrape/{job_id}")
