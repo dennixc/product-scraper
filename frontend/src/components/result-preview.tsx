@@ -10,13 +10,24 @@ import {
 import { Button } from "@/components/ui/button";
 import type { ProductResult } from "@/lib/api";
 
+function htmlToText(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const blocks = doc.body.querySelectorAll("p, h2, h3, h4, li, tr, td");
+  const lines: string[] = [];
+  for (const block of blocks) {
+    const text = block.textContent?.trim();
+    if (text) lines.push(text);
+  }
+  return lines.join("\n\n");
+}
+
 interface ResultPreviewProps {
   result: ProductResult;
   downloadUrl: string;
 }
 
 export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
-  const [htmlView, setHtmlView] = useState<"preview" | "source">("preview");
+  const [htmlView, setHtmlView] = useState<"preview" | "text" | "source">("preview");
   const [htmlCopied, setHtmlCopied] = useState(false);
   const [specsCopied, setSpecsCopied] = useState(false);
 
@@ -102,6 +113,16 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
                     預覽
                   </button>
                   <button
+                    onClick={() => setHtmlView("text")}
+                    className={`px-3 py-1 text-xs font-medium border-x transition-colors ${
+                      htmlView === "text"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    純文字
+                  </button>
+                  <button
                     onClick={() => setHtmlView("source")}
                     className={`px-3 py-1 text-xs font-medium rounded-r-md transition-colors ${
                       htmlView === "source"
@@ -116,10 +137,19 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    copyToClipboard(result.description_html, "html")
+                    copyToClipboard(
+                      htmlView === "text"
+                        ? htmlToText(result.description_html)
+                        : result.description_html,
+                      "html"
+                    )
                   }
                 >
-                  {htmlCopied ? "已複製 ✓" : "複製 HTML"}
+                  {htmlCopied
+                    ? "已複製 ✓"
+                    : htmlView === "text"
+                      ? "複製文字"
+                      : "複製 HTML"}
                 </Button>
               </div>
             </div>
@@ -130,6 +160,10 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
                 className="prose prose-sm max-w-none dark:prose-invert"
                 dangerouslySetInnerHTML={{ __html: result.description_html }}
               />
+            ) : htmlView === "text" ? (
+              <div className="text-sm whitespace-pre-wrap p-4 bg-muted rounded-md max-h-96 overflow-y-auto">
+                {htmlToText(result.description_html)}
+              </div>
             ) : (
               <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
                 {result.description_html}
