@@ -357,6 +357,14 @@ def _extract_description_html(soup: BeautifulSoup) -> str:
                 # Replace non-allowed tag with its contents
                 tag.unwrap()
 
+        # Flatten headings to bold paragraphs for uniform sizing
+        if target.name in ('h2', 'h3', 'h4'):
+            strong_tag = clean.new_tag('strong')
+            for child in list(target.children):
+                strong_tag.append(child.extract())
+            target.name = 'p'
+            target.append(strong_tag)
+
         # Get cleaned HTML string
         html_str = str(target)
         if html_str:
