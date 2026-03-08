@@ -14,6 +14,30 @@ ALLOWED_TAGS = {
     'table', 'thead', 'tbody', 'tr', 'td', 'th',
 }
 
+# Boilerplate / disclaimer patterns — if element text matches any, skip it
+BOILERPLATE_PATTERNS = [
+    # 法律 / 免責聲明
+    r'FCC', r'認證', r'恕不另行通知', r'如有更改',
+    r'商標聲明', r'註冊商標', r'版權',
+    r'僅供參考', r'僅做識別之用',
+    r'All rights reserved', r'subject to change',
+    # 技術 disclaimer
+    r'實際傳輸速度', r'實際數據傳輸', r'實際效能',
+    r'WiFi 覆蓋範圍', r'無線覆蓋範圍',
+    r'IEEE 802\.11', r'WPA.*企業版',
+    r'USB 外接硬碟', r'電源供應',
+    r'第三方服務', r'第三方供應商',
+    # Footer 推廣
+    r'免運', r'客服即時通', r'售後服務', r'鑑賞期',
+    r'SSL.*加密', r'安心.*付款',
+    # 網站導航 / 企業資訊
+    r'投資人關係', r'企業社會責任', r'新聞中心',
+    r'徵才', r'Careers', r'官方公告',
+    r'維修進度', r'找尋服務據點', r'產品註冊',
+    r'舊機回收',
+]
+BOILERPLATE_RE = re.compile('|'.join(BOILERPLATE_PATTERNS), re.IGNORECASE)
+
 # Sections to remove before extracting content
 REMOVE_SELECTORS = [
     'header', 'footer', 'nav',
@@ -292,6 +316,16 @@ def _extract_description_html(soup: BeautifulSoup) -> str:
         if text in seen_texts:
             continue
         seen_texts.add(text)
+
+        # Skip boilerplate / disclaimer content
+        if BOILERPLATE_RE.search(text):
+            continue
+
+        # Skip short-text link lists (likely navigation)
+        if el.name in ('ul', 'ol'):
+            items = el.find_all('li')
+            if items and all(len(li.get_text(strip=True)) < 30 for li in items):
+                continue
 
         # Clean the element
         clean = BeautifulSoup(str(el), 'lxml')
