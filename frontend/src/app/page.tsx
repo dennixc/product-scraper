@@ -16,14 +16,14 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (url: string, productModel?: string) => {
+  const handleSubmit = async (url: string, productModel?: string, apiKey?: string) => {
     setIsLoading(true);
     setError(null);
     setStatus(null);
     setJobId(null);
 
     try {
-      const response = await submitScrapeJob(url, productModel);
+      const response = await submitScrapeJob(url, productModel, apiKey);
       setJobId(response.job_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit job");

@@ -20,12 +20,13 @@ export interface ScrapeStatus {
 
 export async function submitScrapeJob(
   url: string,
-  productModel?: string
+  productModel?: string,
+  apiKey?: string
 ): Promise<{ job_id: string; status: string }> {
   const res = await fetch(`${API_BASE}/api/scrape`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, product_model: productModel || null }),
+    body: JSON.stringify({ url, product_model: productModel || null, api_key: apiKey || null }),
   });
   if (!res.ok) {
     throw new Error(`Failed to submit scrape job: ${res.statusText}`);

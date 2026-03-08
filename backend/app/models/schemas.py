@@ -4,6 +4,7 @@ from typing import Literal
 class ScrapeRequest(BaseModel):
     url: HttpUrl
     product_model: str | None = None
+    api_key: str | None = None
 
 class ProductResult(BaseModel):
     product_name: str
