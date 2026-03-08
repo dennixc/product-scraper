@@ -362,7 +362,7 @@ def _extract_description_html(soup: BeautifulSoup) -> str:
         if html_str:
             content_parts.append(html_str)
 
-    return "\n<br>\n".join(content_parts)
+    return "\n".join(content_parts)
 
 
 def _extract_specifications(soup: BeautifulSoup) -> dict[str, str]:
