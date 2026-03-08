@@ -8,10 +8,10 @@ class ScrapeRequest(BaseModel):
 class ProductResult(BaseModel):
     product_name: str
     product_model: str
-    main_images: list[str]
-    gallery_images: list[str]
     summary: str
     description: str
+    description_html: str
+    specifications: dict[str, str]
     source_url: str
 
 class ScrapeStatus(BaseModel):

@@ -2,53 +2,30 @@ import re
 import json
 from urllib.parse import urljoin, urlparse
 from playwright.async_api import async_playwright
-from bs4 import BeautifulSoup, Tag
-
-# Patterns to filter out non-product images by URL
-EXCLUDE_URL_PATTERNS = [
-    r'icon', r'logo', r'banner', r'sprite', r'social',
-    r'facebook', r'twitter', r'instagram', r'youtube', r'pinterest',
-    r'tracking', r'pixel', r'analytics', r'badge', r'flag',
-    r'arrow', r'btn', r'button', r'cart', r'search',
-    r'placeholder', r'spacer', r'divider', r'bg[-_]',
-    r'avatar', r'favicon', r'1x1', r'blank\.gif',
-    r'rating', r'star[-_]', r'review',
-    r'payment', r'visa', r'mastercard', r'paypal',
-    r'shipping', r'delivery', r'warranty',
-    r'\.svg$',
-]
-EXCLUDE_URL_RE = re.compile('|'.join(EXCLUDE_URL_PATTERNS), re.IGNORECASE)
-
-# Parent sections that should be excluded (images in these are not product images)
-EXCLUDE_ANCESTOR_PATTERNS = [
-    r'gnav', r'global[-_]?nav', r'mega[-_]?menu',
-    r'related', r'recommend', r'also[-_\s]?like', r'you[-_\s]?may',
-    r'similar', r'upsell', r'cross[-_\s]?sell', r'recently[-_\s]?viewed',
-    r'footer', r'site[-_]?footer', r'global[-_]?footer',
-    r'nav[-_]?bar', r'nav[-_]?menu', r'main[-_]?nav', r'site[-_]?nav',
-    r'header(?!.*image)', r'site[-_]?header',
-    r'sidebar', r'newsletter', r'subscribe', r'signup',
-    r'compare', r'accessori', r'compatible',
-    r'cookie', r'consent', r'popup', r'modal(?!.*image)',
-    r'breadcrumb',
-]
-EXCLUDE_ANCESTOR_RE = re.compile('|'.join(EXCLUDE_ANCESTOR_PATTERNS), re.IGNORECASE)
-
-# Product image container class/id patterns (prioritized search)
-PRODUCT_IMAGE_PATTERNS = [
-    r'pdp[-_]?image', r'product[-_]?image', r'product[-_]?gallery',
-    r'product[-_]?photo', r'product[-_]?media',
-    r'primary[-_]?image', r'main[-_]?image', r'hero[-_]?image',
-    r'gallery[-_]?image', r'gallery[-_]?container',
-    r'carousel', r'slider', r'slick',
-    r'zoom[-_]?container', r'image[-_]?viewer',
-]
-PRODUCT_IMAGE_RE = re.compile('|'.join(PRODUCT_IMAGE_PATTERNS), re.IGNORECASE)
+from bs4 import BeautifulSoup, Tag, NavigableString
 
 # Model number pattern: must contain both letters and digits
 MODEL_PATTERN = re.compile(r'(?<![/\w])[A-Z]{1,6}[-\s]?[A-Z0-9]*\d[A-Z0-9]*(?:[-\s][A-Z0-9]+)*(?![/\w])')
 
-MAX_IMAGES = 50
+# Tags allowed in cleaned description HTML
+ALLOWED_TAGS = {
+    'h2', 'h3', 'h4', 'p', 'ul', 'ol', 'li',
+    'strong', 'em', 'b', 'i', 'br',
+    'table', 'thead', 'tbody', 'tr', 'td', 'th',
+}
+
+# Sections to remove before extracting content
+REMOVE_SELECTORS = [
+    'header', 'footer', 'nav',
+    '[class*="cookie"]', '[class*="consent"]', '[class*="banner"]',
+    '[class*="breadcrumb"]', '[class*="sidebar"]', '[class*="newsletter"]',
+    '[class*="subscribe"]', '[class*="social"]', '[class*="share"]',
+    '[class*="related"]', '[class*="recommend"]', '[class*="similar"]',
+    '[class*="upsell"]', '[class*="cross-sell"]',
+    '[id*="cookie"]', '[id*="consent"]', '[id*="breadcrumb"]',
+    '[id*="sidebar"]', '[id*="newsletter"]',
+    'script', 'style', 'noscript', 'iframe',
+]
 
 
 async def scrape_product(url: str) -> dict:
@@ -65,13 +42,27 @@ async def scrape_product(url: str) -> dict:
             await page.goto(url, wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(3000)
 
-            # Scroll to trigger lazy loading
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            await page.wait_for_timeout(1000)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await page.wait_for_timeout(1000)
+            # Scroll to trigger lazy loading of dynamic content
+            for i in range(4):
+                await page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {(i+1)/4})")
+                await page.wait_for_timeout(1000)
 
             html = await page.content()
+
+            # For ASUS pages: try to fetch techspec sub-page
+            techspec_html = None
+            parsed = urlparse(url)
+            if 'asus.com' in parsed.netloc:
+                techspec_url = url.rstrip('/') + '/techspec/'
+                try:
+                    await page.goto(techspec_url, wait_until="domcontentloaded", timeout=30000)
+                    await page.wait_for_timeout(2000)
+                    # Scroll to load specs
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await page.wait_for_timeout(1000)
+                    techspec_html = await page.content()
+                except Exception:
+                    pass
         finally:
             await browser.close()
 
@@ -81,14 +72,23 @@ async def scrape_product(url: str) -> dict:
     product_model = _extract_model(soup, product_name, url)
     summary = _extract_summary(soup)
     description = _extract_description(soup)
-    image_urls = _extract_images(soup, url)
+    description_html = _extract_description_html(soup)
+
+    # Extract specifications (try techspec page first for ASUS)
+    specifications = {}
+    if techspec_html:
+        techspec_soup = BeautifulSoup(techspec_html, 'lxml')
+        specifications = _extract_specifications(techspec_soup)
+    if not specifications:
+        specifications = _extract_specifications(soup)
 
     return {
         "product_name": product_name,
         "product_model": product_model,
         "summary": summary,
         "description": description,
-        "image_urls": image_urls,
+        "description_html": description_html,
+        "specifications": specifications,
         "source_url": url,
     }
 
@@ -233,95 +233,149 @@ def _extract_description(soup: BeautifulSoup) -> str:
     return "\n\n".join(paragraphs[:10]) if paragraphs else ""
 
 
-def _is_in_excluded_ancestor(tag: Tag) -> bool:
-    """Check if a tag is nested inside a non-product section."""
-    for parent in tag.parents:
-        if not isinstance(parent, Tag):
-            continue
-        # Skip body/html - they often have state classes like modal-open, is-sticky
-        if parent.name in ("body", "html", "[document]"):
-            continue
-        classes = " ".join(parent.get("class", []))
-        el_id = parent.get("id", "") or ""
-        combined = f"{classes} {el_id}"
-        if combined.strip() and EXCLUDE_ANCESTOR_RE.search(combined):
-            return True
-    return False
-
-
-def _collect_img_src(img: Tag) -> str | None:
-    """Get the best image source from an img tag."""
-    src = img.get("data-src") or img.get("data-lazy-src") or img.get("src")
-    if not src or src.startswith("data:"):
+def _clean_tag(tag: Tag) -> Tag | None:
+    """Recursively clean a tag, keeping only allowed tags and stripping attributes."""
+    if tag.name not in ALLOWED_TAGS:
+        # For non-allowed tags, promote children
         return None
-    return src
 
+    # Strip all attributes
+    tag.attrs = {}
 
-def _passes_basic_filters(img: Tag, src: str) -> bool:
-    """Check if an image passes basic size and URL pattern filters."""
-    # Check dimensions from attributes
-    width = img.get("width", "")
-    height = img.get("height", "")
-    try:
-        if width and int(width) < 200:
-            return False
-        if height and int(height) < 200:
-            return False
-    except (ValueError, TypeError):
-        pass
-
-    # Check URL patterns
-    if EXCLUDE_URL_RE.search(src):
-        return False
-
-    return True
-
-
-def _extract_images(soup: BeautifulSoup, base_url: str) -> list[str]:
-    """Extract product image URLs using a two-pass strategy."""
-    seen = set()
-    image_urls = []
-
-    def _add_url(src: str) -> bool:
-        """Add URL if not seen. Returns True if added."""
-        if len(image_urls) >= MAX_IMAGES:
-            return False
-        abs_url = urljoin(base_url, src)
-        parsed = urlparse(abs_url)
-        dedup_key = parsed.scheme + "://" + parsed.netloc + parsed.path
-        if dedup_key in seen:
-            return False
-        seen.add(dedup_key)
-        image_urls.append(abs_url)
-        return True
-
-    # Priority 0: og:image
-    og_image = soup.find("meta", property="og:image")
-    if og_image and og_image.get("content"):
-        _add_url(og_image["content"])
-
-    # Priority 1: Images inside product-specific containers
-    for container in soup.find_all(class_=PRODUCT_IMAGE_RE):
-        # Skip if the container itself is inside an excluded section
-        if _is_in_excluded_ancestor(container):
+    # Process children
+    for child in list(tag.children):
+        if isinstance(child, NavigableString):
             continue
-        for img in container.find_all("img"):
-            src = _collect_img_src(img)
-            if src and _passes_basic_filters(img, src):
-                _add_url(src)
+        if isinstance(child, Tag):
+            if child.name in ALLOWED_TAGS:
+                _clean_tag(child)
+            else:
+                # Replace non-allowed tag with its children
+                for grandchild in list(child.children):
+                    child.insert_before(grandchild)
+                child.decompose()
 
-    # Priority 2: If we found very few images from containers, scan entire page
-    if len(image_urls) < 5:
-        for img in soup.find_all("img"):
-            if len(image_urls) >= MAX_IMAGES:
-                break
-            src = _collect_img_src(img)
-            if not src:
-                continue
-            if not _passes_basic_filters(img, src):
-                continue
-            if _is_in_excluded_ancestor(img):
-                continue
-            _add_url(src)
+    return tag
 
-    return image_urls
+
+def _extract_description_html(soup: BeautifulSoup) -> str:
+    """Extract clean HTML description suitable for Shopline product description."""
+    # Work on a copy so we don't mutate the original
+    from copy import copy
+    work_soup = BeautifulSoup(str(soup), 'lxml')
+
+    # Remove non-content elements
+    for selector in REMOVE_SELECTORS:
+        for el in work_soup.select(selector):
+            el.decompose()
+
+    # Find main content area
+    main = work_soup.find('main')
+    if not main:
+        # Try article
+        main = work_soup.find('article')
+    if not main:
+        # Try largest content div
+        main = work_soup.find('body') or work_soup
+
+    # Collect content elements
+    content_parts = []
+    seen_texts = set()
+
+    for el in main.find_all(['h2', 'h3', 'h4', 'p', 'ul', 'ol', 'table']):
+        # Skip empty elements
+        text = el.get_text(strip=True)
+        if not text or len(text) < 5:
+            continue
+
+        # Skip duplicate text
+        if text in seen_texts:
+            continue
+        seen_texts.add(text)
+
+        # Clean the element
+        clean = BeautifulSoup(str(el), 'lxml')
+        target = clean.find(el.name)
+        if not target:
+            continue
+
+        # Strip all attributes from all tags
+        for tag in target.find_all(True):
+            if tag.name in ALLOWED_TAGS:
+                tag.attrs = {}
+            else:
+                # Replace non-allowed tag with its contents
+                tag.unwrap()
+
+        # Get cleaned HTML string
+        html_str = str(target)
+        if html_str:
+            content_parts.append(html_str)
+
+    return "\n".join(content_parts)
+
+
+def _extract_specifications(soup: BeautifulSoup) -> dict[str, str]:
+    """Extract product specifications as key-value pairs."""
+    specs = {}
+
+    # Strategy 1: Find spec tables (class/id contains spec, techspec, specification)
+    spec_patterns = re.compile(r'spec|techspec|specification|product-spec', re.IGNORECASE)
+
+    for table in soup.find_all('table', class_=spec_patterns):
+        _extract_specs_from_table(table, specs)
+    if not specs:
+        for table in soup.find_all('table', id=spec_patterns):
+            _extract_specs_from_table(table, specs)
+
+    # Strategy 2: Find any table that looks like a spec table (2 columns, key-value pattern)
+    if not specs:
+        for table in soup.find_all('table'):
+            rows = table.find_all('tr')
+            if len(rows) >= 3:  # At least 3 rows to look like a spec table
+                two_col_count = sum(1 for row in rows if len(row.find_all(['td', 'th'])) == 2)
+                if two_col_count >= len(rows) * 0.6:
+                    _extract_specs_from_table(table, specs)
+                    if specs:
+                        break
+
+    # Strategy 3: Definition lists
+    if not specs:
+        for dl in soup.find_all('dl'):
+            dts = dl.find_all('dt')
+            dds = dl.find_all('dd')
+            for dt, dd in zip(dts, dds):
+                key = dt.get_text(strip=True)
+                val = dd.get_text(strip=True)
+                if key and val:
+                    specs[key] = val
+
+    # Strategy 4: ASUS-style spec rows (div-based spec layout)
+    if not specs:
+        spec_row_patterns = re.compile(r'spec.*row|spec.*item|spec.*list', re.IGNORECASE)
+        for row in soup.find_all(class_=spec_row_patterns):
+            children = row.find_all(['div', 'span', 'dt', 'dd'], recursive=False)
+            if len(children) >= 2:
+                key = children[0].get_text(strip=True)
+                val = children[1].get_text(strip=True)
+                if key and val and len(key) < 100:
+                    specs[key] = val
+
+    return specs
+
+
+def _extract_specs_from_table(table: Tag, specs: dict[str, str]):
+    """Extract key-value pairs from a specification table."""
+    for row in table.find_all('tr'):
+        cells = row.find_all(['td', 'th'])
+        if len(cells) == 2:
+            key = cells[0].get_text(strip=True)
+            val = cells[1].get_text(strip=True)
+            if key and val and len(key) < 100:
+                specs[key] = val
+        elif len(cells) > 2:
+            # Some tables have header + value columns
+            key = cells[0].get_text(strip=True)
+            val = " | ".join(c.get_text(strip=True) for c in cells[1:] if c.get_text(strip=True))
+            if key and val and len(key) < 100:
+                specs[key] = val

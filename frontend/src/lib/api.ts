@@ -3,10 +3,10 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export interface ProductResult {
   product_name: string;
   product_model: string;
-  main_images: string[];
-  gallery_images: string[];
   summary: string;
   description: string;
+  description_html: string;
+  specifications: Record<string, string>;
   source_url: string;
 }
 
@@ -43,8 +43,4 @@ export async function getJobStatus(jobId: string): Promise<ScrapeStatus> {
 
 export function getDownloadUrl(jobId: string): string {
   return `${API_BASE}/api/scrape/${jobId}/download`;
-}
-
-export function getImageUrl(jobId: string, filename: string): string {
-  return `${API_BASE}/api/scrape/${jobId}/images/${filename}`;
 }

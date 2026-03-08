@@ -3,12 +3,10 @@
 import { useState, useEffect } from "react";
 import { ScrapeForm } from "@/components/scrape-form";
 import { ResultPreview } from "@/components/result-preview";
-import { ImageGallery } from "@/components/image-gallery";
 import {
   submitScrapeJob,
   getJobStatus,
   getDownloadUrl,
-  getImageUrl,
   type ScrapeStatus,
 } from "@/lib/api";
 
@@ -68,10 +66,10 @@ export default function Home() {
         {/* Header */}
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold tracking-tight">
-            Product Data Scraper
+            商品描述提取器
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Extract product information and images from manufacturer websites.
+            從廠商網站提取商品描述同規格，直接貼入 Shopline。
           </p>
         </div>
 
@@ -105,7 +103,7 @@ export default function Home() {
                 />
               </svg>
               <span className="text-sm font-medium">
-                {status.progress || "Processing..."}
+                {status.progress || "處理中..."}
               </span>
             </div>
           </div>
@@ -120,26 +118,10 @@ export default function Home() {
 
         {/* Results */}
         {result && jobId && (
-          <div className="space-y-6">
-            <ResultPreview
-              result={result}
-              downloadUrl={getDownloadUrl(jobId)}
-            />
-
-            <ImageGallery
-              title="Main Images"
-              subtitle="800 x 800 px - White background, cropped to square"
-              images={result.main_images}
-              getImageUrl={(filename) => getImageUrl(jobId, filename)}
-            />
-
-            <ImageGallery
-              title="Gallery Images"
-              subtitle="1280px wide - Original aspect ratio"
-              images={result.gallery_images}
-              getImageUrl={(filename) => getImageUrl(jobId, filename)}
-            />
-          </div>
+          <ResultPreview
+            result={result}
+            downloadUrl={getDownloadUrl(jobId)}
+          />
         )}
       </div>
     </main>
