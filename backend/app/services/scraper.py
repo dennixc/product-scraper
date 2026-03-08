@@ -38,6 +38,11 @@ BOILERPLATE_PATTERNS = [
 ]
 BOILERPLATE_RE = re.compile('|'.join(BOILERPLATE_PATTERNS), re.IGNORECASE)
 
+
+def _normalize_text(text: str) -> str:
+    """Normalize all whitespace (including \\xa0, \\u200b) to single spaces for dedup."""
+    return re.sub(r'\s+', ' ', text).strip()
+
 # Sections to remove before extracting content
 REMOVE_SELECTORS = [
     'header', 'footer', 'nav',
@@ -312,10 +317,21 @@ def _extract_description_html(soup: BeautifulSoup) -> str:
         if not text or len(text) < 5:
             continue
 
-        # Skip duplicate text
-        if text in seen_texts:
+        # Normalize for dedup comparison
+        norm = _normalize_text(text)
+        if norm in seen_texts:
             continue
-        seen_texts.add(text)
+        seen_texts.add(norm)
+
+        # Sentence-level dedup: split into sentences (>15 chars),
+        # skip element if >50% of its sentences already appeared
+        sentences = [s.strip() for s in re.split(r'[。！？\n]', norm) if len(s.strip()) > 15]
+        if sentences:
+            overlap = sum(1 for s in sentences if s in seen_texts)
+            if overlap > len(sentences) * 0.5:
+                continue
+            for s in sentences:
+                seen_texts.add(s)
 
         # Skip boilerplate / disclaimer content
         if BOILERPLATE_RE.search(text):
