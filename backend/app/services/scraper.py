@@ -1,5 +1,6 @@
 import re
 import json
+import time
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup, Tag, NavigableString
@@ -46,10 +47,9 @@ def _normalize_text(text: str) -> str:
 # Sections to remove before extracting content
 REMOVE_SELECTORS = [
     'header', 'footer', 'nav',
-    '[class*="cookie"]', '[class*="consent"]', '[class*="banner"]',
+    '[class*="cookie"]', '[class*="consent"]',
     '[class*="breadcrumb"]', '[class*="sidebar"]', '[class*="newsletter"]',
     '[class*="subscribe"]', '[class*="social"]', '[class*="share"]',
-    '[class*="related"]', '[class*="recommend"]', '[class*="similar"]',
     '[class*="upsell"]', '[class*="cross-sell"]',
     '[id*="cookie"]', '[id*="consent"]', '[id*="breadcrumb"]',
     '[id*="sidebar"]', '[id*="newsletter"]',
@@ -68,13 +68,38 @@ async def scrape_product(url: str) -> dict:
         )
 
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            await page.wait_for_timeout(3000)
+            # Use networkidle to wait for SPA initial API calls to complete
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=60000)
+            except Exception:
+                # Fallback if networkidle hangs (e.g. long-polling connections)
+                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_timeout(2000)
 
-            # Scroll to trigger lazy loading of dynamic content
-            for i in range(4):
-                await page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {(i+1)/4})")
-                await page.wait_for_timeout(1000)
+            # Scroll incrementally to trigger lazy-loaded content
+            scroll_start = time.monotonic()
+            max_scrolls = 30
+            max_seconds = 20
+            prev_height = await page.evaluate("document.body.scrollHeight")
+            viewport_h = await page.evaluate("window.innerHeight")
+            scroll_pos = 0
+
+            for _ in range(max_scrolls):
+                if time.monotonic() - scroll_start > max_seconds:
+                    break
+                scroll_pos += viewport_h
+                await page.evaluate(f"window.scrollTo(0, {scroll_pos})")
+                await page.wait_for_timeout(600)
+
+                new_height = await page.evaluate("document.body.scrollHeight")
+                # If we've scrolled past the page and height didn't change, done
+                if scroll_pos >= new_height and new_height == prev_height:
+                    break
+                prev_height = new_height
+
+            # Scroll back to top (some SPAs load content based on viewport)
+            await page.evaluate("window.scrollTo(0, 0)")
+            await page.wait_for_timeout(500)
 
             html = await page.content()
         finally:
@@ -202,9 +227,32 @@ def _extract_summary(soup: BeautifulSoup) -> str:
 
 
 def _extract_description(soup: BeautifulSoup) -> str:
-    """Extract detailed product description from common product detail sections."""
+    """Extract detailed product description from multiple sources."""
     description_parts = []
+    seen_texts = set()
 
+    def _add_text(text: str) -> bool:
+        norm = _normalize_text(text)
+        if norm in seen_texts or len(norm) < 30:
+            return False
+        seen_texts.add(norm)
+        description_parts.append(text)
+        return True
+
+    # Source 1: JSON-LD Product.description
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if item.get("@type") in ("Product", "IndividualProduct"):
+                    desc = item.get("description", "")
+                    if desc and len(desc) > 30:
+                        _add_text(desc)
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            continue
+
+    # Source 2: Class/id pattern matching (existing logic)
     desc_patterns = [
         'product-description', 'product-detail', 'product-info',
         'productDescription', 'productDetail', 'productInfo',
@@ -214,28 +262,41 @@ def _extract_description(soup: BeautifulSoup) -> str:
     ]
 
     for pattern in desc_patterns:
-        elements = soup.find_all(class_=re.compile(pattern, re.IGNORECASE))
-        for el in elements:
+        for el in soup.find_all(class_=re.compile(pattern, re.IGNORECASE)):
             text = el.get_text(separator="\n", strip=True)
-            if len(text) > 30 and text not in description_parts:
-                description_parts.append(text)
+            _add_text(text)
 
-        elements = soup.find_all(id=re.compile(pattern, re.IGNORECASE))
-        for el in elements:
+        for el in soup.find_all(id=re.compile(pattern, re.IGNORECASE)):
             text = el.get_text(separator="\n", strip=True)
-            if len(text) > 30 and text not in description_parts:
-                description_parts.append(text)
+            _add_text(text)
 
     if description_parts:
         return "\n\n".join(description_parts[:5])
 
+    # Source 3: Paragraphs
     paragraphs = []
     for p in soup.find_all("p"):
         text = p.get_text(strip=True)
-        if len(text) >= 50:
+        if len(text) >= 50 and _normalize_text(text) not in seen_texts:
             paragraphs.append(text)
 
-    return "\n\n".join(paragraphs[:10]) if paragraphs else ""
+    if paragraphs:
+        return "\n\n".join(paragraphs[:10])
+
+    # Source 4: Leaf div/section text (fallback for SPA sites)
+    main = soup.find('main') or soup.find('article') or soup.find('body') or soup
+    leaf_texts = []
+    for el in main.find_all(['div', 'section', 'span']):
+        if el.find(_BLOCK_TAGS):
+            continue
+        text = el.get_text(strip=True)
+        if len(text) >= 40 and not BOILERPLATE_RE.search(text):
+            norm = _normalize_text(text)
+            if norm not in seen_texts:
+                seen_texts.add(norm)
+                leaf_texts.append(text)
+
+    return "\n\n".join(leaf_texts[:10]) if leaf_texts else ""
 
 
 def _clean_tag(tag: Tag) -> Tag | None:
@@ -263,10 +324,74 @@ def _clean_tag(tag: Tag) -> Tag | None:
     return tag
 
 
+# Block-level tags used to identify "leaf" containers in Phase 2
+_BLOCK_TAGS = {'div', 'section', 'article', 'aside', 'main', 'header', 'footer', 'nav',
+               'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'table', 'blockquote',
+               'figure', 'figcaption', 'details', 'summary', 'form', 'fieldset', 'pre'}
+
+
+def _maybe_add_element(
+    el: Tag,
+    seen_texts: set[str],
+    content_parts: list[str],
+    min_length: int = 5,
+) -> bool:
+    """Try to add an element's cleaned HTML to content_parts.
+
+    Returns True if the element was added, False if skipped.
+    Handles dedup, boilerplate filtering, nav-list filtering, and HTML cleaning.
+    """
+    text = el.get_text(strip=True)
+    if not text or len(text) < min_length:
+        return False
+
+    # Normalize for dedup
+    norm = _normalize_text(text)
+    if norm in seen_texts:
+        return False
+    seen_texts.add(norm)
+
+    # Sentence-level dedup: skip if >50% of sentences already seen
+    sentences = [s.strip() for s in re.split(r'[。！？\n]', norm) if len(s.strip()) > 15]
+    if sentences:
+        overlap = sum(1 for s in sentences if s in seen_texts)
+        if overlap > len(sentences) * 0.5:
+            return False
+        for s in sentences:
+            seen_texts.add(s)
+
+    # Skip boilerplate / disclaimer content
+    if BOILERPLATE_RE.search(text):
+        return False
+
+    # Skip short-text link lists (likely navigation)
+    if el.name in ('ul', 'ol'):
+        items = el.find_all('li')
+        if items and all(len(li.get_text(strip=True)) < 30 for li in items):
+            return False
+
+    # Clean the element — keep only allowed tags, strip attributes
+    clean = BeautifulSoup(str(el), 'lxml')
+    target = clean.find(el.name)
+    if not target:
+        return False
+
+    for tag in target.find_all(True):
+        if tag.name in ALLOWED_TAGS:
+            tag.attrs = {}
+        else:
+            tag.unwrap()
+
+    html_str = str(target)
+    if html_str:
+        content_parts.append(html_str)
+        return True
+    return False
+
+
 def _extract_description_html(soup: BeautifulSoup) -> str:
     """Extract clean HTML description suitable for Shopline product description."""
     # Work on a copy so we don't mutate the original
-    from copy import copy
     work_soup = BeautifulSoup(str(soup), 'lxml')
 
     # Remove non-content elements
@@ -287,56 +412,17 @@ def _extract_description_html(soup: BeautifulSoup) -> str:
     content_parts = []
     seen_texts = set()
 
+    # Phase 1: Standard semantic elements (h2-h4, p, ul, ol, table)
     for el in main.find_all(['h2', 'h3', 'h4', 'p', 'ul', 'ol', 'table']):
-        # Skip empty elements
-        text = el.get_text(strip=True)
-        if not text or len(text) < 5:
+        _maybe_add_element(el, seen_texts, content_parts)
+
+    # Phase 2: Leaf containers — div/section/span with text but no block-level children
+    # This captures SPA content rendered inside Vue/React components
+    for el in main.find_all(['div', 'section', 'span']):
+        # Skip if it contains block-level children (not a "leaf")
+        if el.find(_BLOCK_TAGS):
             continue
-
-        # Normalize for dedup comparison
-        norm = _normalize_text(text)
-        if norm in seen_texts:
-            continue
-        seen_texts.add(norm)
-
-        # Sentence-level dedup: split into sentences (>15 chars),
-        # skip element if >50% of its sentences already appeared
-        sentences = [s.strip() for s in re.split(r'[。！？\n]', norm) if len(s.strip()) > 15]
-        if sentences:
-            overlap = sum(1 for s in sentences if s in seen_texts)
-            if overlap > len(sentences) * 0.5:
-                continue
-            for s in sentences:
-                seen_texts.add(s)
-
-        # Skip boilerplate / disclaimer content
-        if BOILERPLATE_RE.search(text):
-            continue
-
-        # Skip short-text link lists (likely navigation)
-        if el.name in ('ul', 'ol'):
-            items = el.find_all('li')
-            if items and all(len(li.get_text(strip=True)) < 30 for li in items):
-                continue
-
-        # Clean the element
-        clean = BeautifulSoup(str(el), 'lxml')
-        target = clean.find(el.name)
-        if not target:
-            continue
-
-        # Strip all attributes from all tags
-        for tag in target.find_all(True):
-            if tag.name in ALLOWED_TAGS:
-                tag.attrs = {}
-            else:
-                # Replace non-allowed tag with its contents
-                tag.unwrap()
-
-        # Get cleaned HTML string
-        html_str = str(target)
-        if html_str:
-            content_parts.append(html_str)
+        _maybe_add_element(el, seen_texts, content_parts, min_length=40)
 
     return "\n".join(content_parts)
 
