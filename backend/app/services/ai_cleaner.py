@@ -1,5 +1,18 @@
 from openai import AsyncOpenAI
 
+MAX_HTML_CHARS = 100_000
+
+
+def _truncate_html(html: str) -> str:
+    """Truncate HTML at ~100KB, trying to break at a tag boundary."""
+    if len(html) <= MAX_HTML_CHARS:
+        return html
+    truncated = html[:MAX_HTML_CHARS]
+    last_close = truncated.rfind('>')
+    if last_close > MAX_HTML_CHARS * 0.8:
+        truncated = truncated[:last_close + 1]
+    return truncated
+
 
 CLEAN_PROMPT = """你係一個商品描述篩選器。以下係從「{product_name}」產品頁面提取嘅 HTML 內容。
 
@@ -52,7 +65,7 @@ async def clean_description_with_ai(
                     "role": "user",
                     "content": CLEAN_PROMPT.format(
                         product_name=product_name,
-                        raw_html=raw_html,
+                        raw_html=_truncate_html(raw_html),
                     ),
                 }
             ],

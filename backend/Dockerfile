@@ -8,4 +8,4 @@ RUN playwright install --with-deps chromium
 
 COPY . .
 
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --limit-concurrency 10

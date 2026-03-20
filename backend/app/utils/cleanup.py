@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from app.utils.background import jobs, job_timestamps
 
 JOBS_DIR = "/tmp/scraper_jobs"
-MAX_AGE_MINUTES = 30
-CLEANUP_INTERVAL_SECONDS = 600  # 10 minutes
+MAX_AGE_MINUTES = 10
+CLEANUP_INTERVAL_SECONDS = 120  # 2 minutes
 
 async def start_cleanup_task():
     while True:

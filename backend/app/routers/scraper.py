@@ -1,7 +1,7 @@
 import uuid
 import os
 import asyncio
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult
 from app.utils.background import create_job, get_job, update_job
@@ -14,7 +14,18 @@ router = APIRouter(prefix="/api")
 
 JOBS_DIR = "/tmp/scraper_jobs"
 
+# Limit to 1 concurrent scrape to stay within Render free tier 512MB RAM
+_scrape_semaphore = asyncio.Semaphore(1)
+
 async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None):
+    try:
+        update_job(job_id, progress="Waiting in queue...")
+        async with _scrape_semaphore:
+            await _execute_scrape_job(job_id, url, product_model, api_key, ai_model)
+    except Exception as e:
+        update_job(job_id, status="failed", error=str(e), progress=None)
+
+async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None):
     try:
         update_job(job_id, progress="Connecting to page...")
         raw_data = await scrape_product(url)
@@ -76,7 +87,7 @@ async def get_scrape_status(job_id: str):
     return job
 
 @router.get("/scrape/{job_id}/download")
-async def download_zip(job_id: str):
+async def download_zip(job_id: str, background_tasks: BackgroundTasks):
     job = get_job(job_id)
     if not job or job.status != "completed":
         raise HTTPException(status_code=404, detail="Job not found or not completed")
@@ -84,4 +95,11 @@ async def download_zip(job_id: str):
     if not os.path.exists(zip_path):
         raise HTTPException(status_code=404, detail="ZIP file not found")
     model_name = job.result.product_model if job.result else "product"
+    # Free result data from memory after download
+    background_tasks.add_task(_clear_job_result, job_id)
     return FileResponse(zip_path, media_type="application/zip", filename=f"{model_name}.zip")
+
+def _clear_job_result(job_id: str):
+    job = get_job(job_id)
+    if job:
+        job.result = None

@@ -1,5 +1,18 @@
 from openai import AsyncOpenAI
 
+MAX_HTML_CHARS = 100_000
+
+
+def _truncate_html(html: str) -> str:
+    """Truncate HTML at ~100KB, trying to break at a tag boundary."""
+    if len(html) <= MAX_HTML_CHARS:
+        return html
+    truncated = html[:MAX_HTML_CHARS]
+    last_close = truncated.rfind('>')
+    if last_close > MAX_HTML_CHARS * 0.8:
+        truncated = truncated[:last_close + 1]
+    return truncated
+
 
 SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。你嘅工作係將產品資料轉換為一段精美嘅、帶 inline styles 嘅 HTML，可以直接貼入 Shopline 商品描述編輯器。
 
@@ -60,7 +73,7 @@ async def generate_shopline_html(
                         product_name=product_name,
                         product_model=product_model,
                         summary=summary,
-                        description_html=description_html,
+                        description_html=_truncate_html(description_html),
                     ),
                 }
             ],

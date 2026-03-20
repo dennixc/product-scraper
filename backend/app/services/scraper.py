@@ -1,3 +1,4 @@
+import copy
 import re
 import json
 import time
@@ -61,7 +62,19 @@ async def scrape_product(url: str) -> dict:
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-dev-shm-usage']
+            args=[
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-default-apps',
+                '--disable-sync',
+                '--disable-translate',
+                '--no-first-run',
+                '--single-process',
+                '--js-flags=--max-old-space-size=256',
+            ]
         )
         page = await browser.new_page(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -106,6 +119,7 @@ async def scrape_product(url: str) -> dict:
             await browser.close()
 
     soup = BeautifulSoup(html, 'lxml')
+    del html  # Free raw HTML string
 
     product_name = _extract_product_name(soup)
     product_model = _extract_model(soup, product_name, url)
@@ -371,18 +385,14 @@ def _maybe_add_element(
             return False
 
     # Clean the element — keep only allowed tags, strip attributes
-    clean = BeautifulSoup(str(el), 'lxml')
-    target = clean.find(el.name)
-    if not target:
-        return False
-
-    for tag in target.find_all(True):
+    el_copy = copy.deepcopy(el)
+    for tag in el_copy.find_all(True):
         if tag.name in ALLOWED_TAGS:
             tag.attrs = {}
         else:
             tag.unwrap()
 
-    html_str = str(target)
+    html_str = str(el_copy)
     if html_str:
         content_parts.append(html_str)
         return True
@@ -390,9 +400,11 @@ def _maybe_add_element(
 
 
 def _extract_description_html(soup: BeautifulSoup) -> str:
-    """Extract clean HTML description suitable for Shopline product description."""
-    # Work on a copy so we don't mutate the original
-    work_soup = BeautifulSoup(str(soup), 'lxml')
+    """Extract clean HTML description suitable for Shopline product description.
+
+    NOTE: This function mutates soup. It MUST be called last in scrape_product().
+    """
+    work_soup = soup
 
     # Remove non-content elements
     for selector in REMOVE_SELECTORS:
