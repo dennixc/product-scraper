@@ -29,7 +29,7 @@ BOILERPLATE_PATTERNS = [
     # 技術 disclaimer
     r'實際傳輸速度', r'實際數據傳輸', r'實際效能',
     r'WiFi 覆蓋範圍', r'無線覆蓋範圍',
-    r'IEEE 802\.11', r'WPA.*企業版',
+    r'WPA.*企業版',
     r'USB 外接硬碟', r'電源供應',
     r'第三方服務', r'第三方供應商',
     # Footer 推廣
@@ -173,16 +173,21 @@ async def scrape_product(url: str) -> dict:
     # Phase 1: Try lightweight httpx fetch first (~200MB peak)
     html = await _fetch_with_httpx(url)
     if html:
-        soup = BeautifulSoup(html, 'lxml')
-        del html
-        data = _extract_all(soup, url)
-        if _is_content_sufficient(data):
-            return data
-        # Content insufficient — free memory before Playwright
-        del data, soup
-        gc.collect()
+        # SPA frameworks: SSR content often incomplete, needs JS rendering
+        is_spa = '__NUXT__' in html or '__NEXT_DATA__' in html
+        if not is_spa:
+            soup = BeautifulSoup(html, 'lxml')
+            del html
+            data = _extract_all(soup, url)
+            if _is_content_sufficient(data):
+                return data
+            del data, soup
+            gc.collect()
+        else:
+            del html
+            gc.collect()
 
-    # Phase 2: Fallback to Playwright for SPA sites (~450-500MB peak)
+    # Phase 2: Fallback to Playwright for SPA sites / insufficient content
     html = await _fetch_with_playwright(url)
     soup = BeautifulSoup(html, 'lxml')
     del html
