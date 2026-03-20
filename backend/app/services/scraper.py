@@ -177,11 +177,12 @@ async def scrape_product(url: str) -> dict:
         is_spa = '__NUXT__' in html or '__NEXT_DATA__' in html
         if not is_spa:
             soup = BeautifulSoup(html, 'lxml')
-            del html
             data = _extract_all(soup, url)
             if _is_content_sufficient(data):
+                data["_raw_html"] = html
+                del soup
                 return data
-            del data, soup
+            del data, soup, html
             gc.collect()
         else:
             del html
@@ -190,8 +191,10 @@ async def scrape_product(url: str) -> dict:
     # Phase 2: Fallback to Playwright for SPA sites / insufficient content
     html = await _fetch_with_playwright(url)
     soup = BeautifulSoup(html, 'lxml')
-    del html
-    return _extract_all(soup, url)
+    data = _extract_all(soup, url)
+    data["_raw_html"] = html
+    del soup, html
+    return data
 
 
 def _extract_product_name(soup: BeautifulSoup) -> str:

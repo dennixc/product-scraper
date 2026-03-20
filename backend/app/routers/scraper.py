@@ -1,3 +1,4 @@
+import re
 import uuid
 import os
 import asyncio
@@ -8,6 +9,7 @@ from app.utils.background import create_job, get_job, update_job
 from app.services.scraper import scrape_product
 from app.services.packager import create_package
 from app.services.ai_cleaner import clean_description_with_ai
+from app.services.ai_extractor import extract_description_with_ai
 from app.services.shopline_formatter import generate_shopline_html
 
 router = APIRouter(prefix="/api")
@@ -29,6 +31,23 @@ async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, 
     try:
         update_job(job_id, progress="Connecting to page...")
         raw_data = await scrape_product(url)
+        raw_html = raw_data.pop("_raw_html", "")
+
+        # Check if rule-based extraction is sufficient (≥500 chars plain text)
+        desc_html = raw_data.get("description_html", "")
+        plain_text = re.sub(r'<[^>]+>', ' ', desc_html)
+        plain_text = re.sub(r'\s+', ' ', plain_text).strip()
+        extraction_sufficient = len(plain_text) >= 500
+
+        if api_key and not extraction_sufficient and raw_html:
+            update_job(job_id, progress="AI 正在分析頁面結構...")
+            ai_desc = await extract_description_with_ai(
+                raw_html, raw_data.get("product_name", ""), api_key, ai_model
+            )
+            if ai_desc:
+                raw_data["description_html"] = ai_desc
+
+        del raw_html
 
         if api_key and raw_data.get("description_html"):
             update_job(job_id, progress="AI 正在優化內容...")
