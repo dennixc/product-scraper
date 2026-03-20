@@ -1,8 +1,11 @@
 import copy
+import gc
 import re
 import json
 import time
 from urllib.parse import urlparse
+
+import httpx
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup, Tag, NavigableString
 
@@ -58,7 +61,26 @@ REMOVE_SELECTORS = [
 ]
 
 
-async def scrape_product(url: str) -> dict:
+_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+
+async def _fetch_with_httpx(url: str) -> str | None:
+    """Lightweight HTTP fetch — no browser needed (~200MB peak)."""
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=30.0,
+            headers={"User-Agent": _USER_AGENT},
+        ) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.text
+    except Exception:
+        return None
+
+
+async def _fetch_with_playwright(url: str) -> str:
+    """Full browser fetch for SPA sites (~450-500MB peak)."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
@@ -76,23 +98,19 @@ async def scrape_product(url: str) -> dict:
                 '--js-flags=--max-old-space-size=256',
             ]
         )
-        page = await browser.new_page(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        )
+        page = await browser.new_page(user_agent=_USER_AGENT)
 
         try:
-            # Use networkidle to wait for SPA initial API calls to complete
             try:
                 await page.goto(url, wait_until="networkidle", timeout=60000)
             except Exception:
-                # Fallback if networkidle hangs (e.g. long-polling connections)
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(2000)
 
             # Scroll incrementally to trigger lazy-loaded content
             scroll_start = time.monotonic()
-            max_scrolls = 30
-            max_seconds = 20
+            max_scrolls = 20
+            max_seconds = 15
             prev_height = await page.evaluate("document.body.scrollHeight")
             viewport_h = await page.evaluate("window.innerHeight")
             scroll_pos = 0
@@ -105,12 +123,10 @@ async def scrape_product(url: str) -> dict:
                 await page.wait_for_timeout(600)
 
                 new_height = await page.evaluate("document.body.scrollHeight")
-                # If we've scrolled past the page and height didn't change, done
                 if scroll_pos >= new_height and new_height == prev_height:
                     break
                 prev_height = new_height
 
-            # Scroll back to top (some SPAs load content based on viewport)
             await page.evaluate("window.scrollTo(0, 0)")
             await page.wait_for_timeout(500)
 
@@ -118,13 +134,17 @@ async def scrape_product(url: str) -> dict:
         finally:
             await browser.close()
 
-    soup = BeautifulSoup(html, 'lxml')
-    del html  # Free raw HTML string
+    gc.collect()
+    return html
 
+
+def _extract_all(soup: BeautifulSoup, url: str) -> dict:
+    """Extract all product data from parsed HTML."""
     product_name = _extract_product_name(soup)
     product_model = _extract_model(soup, product_name, url)
     summary = _extract_summary(soup)
     description = _extract_description(soup)
+    # _extract_description_html mutates soup — must be called last
     description_html = _extract_description_html(soup)
 
     return {
@@ -135,6 +155,35 @@ async def scrape_product(url: str) -> dict:
         "description_html": description_html,
         "source_url": url,
     }
+
+
+def _is_content_sufficient(data: dict) -> bool:
+    """Check if extracted data has enough content to skip Playwright."""
+    if data.get("product_name", "Unknown Product") == "Unknown Product":
+        return False
+    desc_html = data.get("description_html", "")
+    desc = data.get("description", "")
+    return len(desc_html) >= 200 or len(desc) >= 100
+
+
+async def scrape_product(url: str) -> dict:
+    # Phase 1: Try lightweight httpx fetch first (~200MB peak)
+    html = await _fetch_with_httpx(url)
+    if html:
+        soup = BeautifulSoup(html, 'lxml')
+        del html
+        data = _extract_all(soup, url)
+        if _is_content_sufficient(data):
+            return data
+        # Content insufficient — free memory before Playwright
+        del data, soup
+        gc.collect()
+
+    # Phase 2: Fallback to Playwright for SPA sites (~450-500MB peak)
+    html = await _fetch_with_playwright(url)
+    soup = BeautifulSoup(html, 'lxml')
+    del html
+    return _extract_all(soup, url)
 
 
 def _extract_product_name(soup: BeautifulSoup) -> str:
