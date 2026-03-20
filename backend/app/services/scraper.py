@@ -420,23 +420,29 @@ def _maybe_add_element(
     norm = _normalize_text(text)
     if norm in seen_texts:
         return False
-    seen_texts.add(norm)
 
     # Sentence-level dedup: skip if >50% of sentences already seen
-    sentences = [s.strip() for s in re.split(r'[。！？\n]', norm) if len(s.strip()) > 15]
+    # Split on Chinese sentence markers, English sentence boundaries, and newlines
+    sentences = [s.strip() for s in re.split(r'[。！？!?\n]|(?<=\w)\.\s', norm) if len(s.strip()) > 15]
     if sentences:
         overlap = sum(1 for s in sentences if s in seen_texts)
         if overlap > len(sentences) * 0.5:
+            seen_texts.add(norm)
             return False
         for s in sentences:
             seen_texts.add(s)
+
+    seen_texts.add(norm)
 
     # Skip boilerplate / disclaimer content
     if BOILERPLATE_RE.search(text):
         return False
 
-    # Skip short-text link lists (likely navigation)
+    # Skip ul/ol that are structural containers (contain headings, not a simple list)
     if el.name in ('ul', 'ol'):
+        if el.find(['h2', 'h3', 'h4']):
+            return False
+        # Skip short-text link lists (likely navigation)
         items = el.find_all('li')
         if items and all(len(li.get_text(strip=True)) < 30 for li in items):
             return False
