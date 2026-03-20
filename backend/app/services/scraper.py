@@ -64,7 +64,12 @@ REMOVE_SELECTORS = [
 _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 
-async def _fetch_with_httpx(url: str) -> str | None:
+def detect_spa_heuristic(html: str) -> bool:
+    """Original SPA detection heuristic — used as fallback when AI analysis fails."""
+    return '__NUXT__' in html or '__NEXT_DATA__' in html
+
+
+async def fetch_with_httpx(url: str) -> str | None:
     """Lightweight HTTP fetch — no browser needed (~200MB peak)."""
     try:
         async with httpx.AsyncClient(
@@ -79,7 +84,7 @@ async def _fetch_with_httpx(url: str) -> str | None:
         return None
 
 
-async def _fetch_with_playwright(url: str) -> str:
+async def fetch_with_playwright(url: str) -> str:
     """Full browser fetch for SPA sites (~450-500MB peak)."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -138,7 +143,7 @@ async def _fetch_with_playwright(url: str) -> str:
     return html
 
 
-def _extract_all(soup: BeautifulSoup, url: str) -> dict:
+def extract_all(soup: BeautifulSoup, url: str) -> dict:
     """Extract all product data from parsed HTML."""
     product_name = _extract_product_name(soup)
     product_model = _extract_model(soup, product_name, url)
@@ -171,13 +176,13 @@ def _is_content_sufficient(data: dict) -> bool:
 
 async def scrape_product(url: str) -> dict:
     # Phase 1: Try lightweight httpx fetch first (~200MB peak)
-    html = await _fetch_with_httpx(url)
+    html = await fetch_with_httpx(url)
     if html:
         # SPA frameworks: SSR content often incomplete, needs JS rendering
-        is_spa = '__NUXT__' in html or '__NEXT_DATA__' in html
+        is_spa = detect_spa_heuristic(html)
         if not is_spa:
             soup = BeautifulSoup(html, 'lxml')
-            data = _extract_all(soup, url)
+            data = extract_all(soup, url)
             if _is_content_sufficient(data):
                 data["_raw_html"] = html
                 del soup
@@ -189,9 +194,9 @@ async def scrape_product(url: str) -> dict:
             gc.collect()
 
     # Phase 2: Fallback to Playwright for SPA sites / insufficient content
-    html = await _fetch_with_playwright(url)
+    html = await fetch_with_playwright(url)
     soup = BeautifulSoup(html, 'lxml')
-    data = _extract_all(soup, url)
+    data = extract_all(soup, url)
     data["_raw_html"] = html
     del soup, html
     return data
