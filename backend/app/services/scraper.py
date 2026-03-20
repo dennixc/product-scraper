@@ -163,7 +163,10 @@ def _is_content_sufficient(data: dict) -> bool:
         return False
     desc_html = data.get("description_html", "")
     desc = data.get("description", "")
-    return len(desc_html) >= 200 or len(desc) >= 100
+    # Strip HTML tags — 量度實際文字內容，唔係 markup
+    plain_from_html = re.sub(r'<[^>]+>', ' ', desc_html)
+    plain_from_html = re.sub(r'\s+', ' ', plain_from_html).strip()
+    return len(plain_from_html) >= 300 or len(desc) >= 200
 
 
 async def scrape_product(url: str) -> dict:
@@ -435,6 +438,7 @@ def _maybe_add_element(
 
     # Clean the element — keep only allowed tags, strip attributes
     el_copy = copy.deepcopy(el)
+    el_copy.attrs = {}  # Strip root element attributes
     for tag in el_copy.find_all(True):
         if tag.name in ALLOWED_TAGS:
             tag.attrs = {}
