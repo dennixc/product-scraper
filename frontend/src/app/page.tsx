@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import { ScrapeForm } from "@/components/scrape-form";
 import { ResultPreview } from "@/components/result-preview";
+import { ReviewPanel } from "@/components/review-panel";
 import {
   submitScrapeJob,
   getJobStatus,
   getDownloadUrl,
+  submitReview,
   type ScrapeStatus,
 } from "@/lib/api";
 
@@ -15,6 +17,7 @@ export default function Home() {
   const [status, setStatus] = useState<ScrapeStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pollTrigger, setPollTrigger] = useState(0);
 
   const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string) => {
     setIsLoading(true);
@@ -25,22 +28,27 @@ export default function Home() {
     try {
       const response = await submitScrapeJob(url, productModel, apiKey, aiModel);
       setJobId(response.job_id);
+      setPollTrigger((n) => n + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit job");
       setIsLoading(false);
     }
   };
 
-  // Polling for job status
+  // Polling for job status — re-triggers on pollTrigger change
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId || !isLoading) return;
 
     const interval = setInterval(async () => {
       try {
         const jobStatus = await getJobStatus(jobId);
         setStatus(jobStatus);
 
-        if (jobStatus.status === "completed" || jobStatus.status === "failed") {
+        if (
+          jobStatus.status === "completed" ||
+          jobStatus.status === "failed" ||
+          jobStatus.status === "awaiting_review"
+        ) {
           clearInterval(interval);
           setIsLoading(false);
 
@@ -56,9 +64,39 @@ export default function Home() {
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [jobId]);
+  }, [jobId, pollTrigger, isLoading]);
+
+  const handleConfirm = async () => {
+    if (!jobId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await submitReview(jobId, "confirm");
+      setStatus((prev) => prev ? { ...prev, status: "processing", progress: "正在生成 Shopline HTML..." } : prev);
+      setPollTrigger((n) => n + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to confirm");
+      setIsLoading(false);
+    }
+  };
+
+  const handleRefine = async (instructions: string) => {
+    if (!jobId) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await submitReview(jobId, "refine", instructions);
+      setStatus((prev) => prev ? { ...prev, status: "processing", progress: "AI 正在根據指示重新提取..." } : prev);
+      setPollTrigger((n) => n + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to refine");
+      setIsLoading(false);
+    }
+  };
 
   const result = status?.result;
+  const isReviewing = status?.status === "awaiting_review" && !!result;
+  const isCompleted = status?.status === "completed" && !!result;
 
   return (
     <main className="min-h-screen bg-background">
@@ -116,8 +154,18 @@ export default function Home() {
           </div>
         )}
 
-        {/* Results */}
-        {result && jobId && (
+        {/* Review Panel — shown when awaiting_review */}
+        {isReviewing && result && (
+          <ReviewPanel
+            result={result}
+            onConfirm={handleConfirm}
+            onRefine={handleRefine}
+            isRefining={isLoading}
+          />
+        )}
+
+        {/* Final Results — shown when completed */}
+        {isCompleted && result && jobId && (
           <ResultPreview
             result={result}
             downloadUrl={getDownloadUrl(jobId)}

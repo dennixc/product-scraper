@@ -12,7 +12,7 @@ export interface ProductResult {
 
 export interface ScrapeStatus {
   job_id: string;
-  status: "processing" | "completed" | "failed";
+  status: "processing" | "awaiting_review" | "completed" | "failed";
   progress: string | null;
   result: ProductResult | null;
   error: string | null;
@@ -41,6 +41,21 @@ export async function getJobStatus(jobId: string): Promise<ScrapeStatus> {
     throw new Error(`Failed to get job status: ${res.statusText}`);
   }
   return res.json();
+}
+
+export async function submitReview(
+  jobId: string,
+  action: "confirm" | "refine",
+  instructions?: string
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/scrape/${jobId}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, instructions: instructions || "" }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to submit review: ${res.statusText}`);
+  }
 }
 
 export function getDownloadUrl(jobId: string): string {

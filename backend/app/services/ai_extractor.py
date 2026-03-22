@@ -92,6 +92,7 @@ async def extract_description_with_ai(
     api_key: str,
     model: str | None = None,
     analysis: dict | None = None,
+    extra_instructions: str = "",
 ) -> str:
     """用 AI 從 raw HTML 提取產品描述。
 
@@ -101,6 +102,14 @@ async def extract_description_with_ai(
         prepared = _prepare_html(raw_html, analysis)
         if not prepared or len(prepared) < 100:
             return ""
+
+        prompt = EXTRACT_PROMPT.format(
+            product_name=product_name,
+            analysis_hints=_build_analysis_hints(analysis),
+            html=prepared,
+        )
+        if extra_instructions:
+            prompt += f"\n\n## 用戶額外指示\n{extra_instructions}"
 
         client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
@@ -112,11 +121,7 @@ async def extract_description_with_ai(
             messages=[
                 {
                     "role": "user",
-                    "content": EXTRACT_PROMPT.format(
-                        product_name=product_name,
-                        analysis_hints=_build_analysis_hints(analysis),
-                        html=prepared,
-                    ),
+                    "content": prompt,
                 }
             ],
         )

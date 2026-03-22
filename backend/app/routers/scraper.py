@@ -6,8 +6,11 @@ import asyncio
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from bs4 import BeautifulSoup
-from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult
-from app.utils.background import create_job, get_job, update_job
+from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction
+from app.utils.background import (
+    create_job, get_job, update_job,
+    set_job_internal, get_job_internal, clear_job_internal,
+)
 from app.services.scraper import (
     scrape_product, fetch_with_httpx, fetch_with_playwright,
     extract_all, detect_spa_heuristic,
@@ -136,11 +139,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
                 if ai_desc:
                     raw_data["description_html"] = ai_desc
 
-        # Step 7: Release raw HTML
-        del html
-        gc.collect()
-
-        # Step 8: AI cleaner → Shopline formatter → package
+        # Step 7: AI cleaner
         if raw_data.get("description_html"):
             update_job(job_id, progress="AI 正在優化內容...")
             raw_data["description_html"] = await clean_description_with_ai(
@@ -153,35 +152,131 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
 
         model = product_model or raw_data.get("product_model", "product")
 
-        shopline_html = ""
-        if raw_data.get("description_html"):
-            update_job(job_id, progress="正在生成 Shopline HTML...")
-            shopline_html = await generate_shopline_html(
-                raw_data.get("product_name", ""),
-                model,
-                raw_data.get("summary", ""),
-                raw_data["description_html"],
-                api_key,
-                ai_model,
-            )
+        # Step 8: Pause for user review — store context for refine/finalize
+        set_job_internal(job_id,
+            raw_html=html,
+            api_key=api_key,
+            ai_model=ai_model,
+            analysis=analysis,
+            product_name=raw_data.get("product_name", ""),
+            product_model=model,
+        )
+        del html
+        gc.collect()
 
-        result = ProductResult(
+        review_result = ProductResult(
             product_name=raw_data.get("product_name", "Unknown"),
             product_model=model,
             summary=raw_data.get("summary", ""),
             description=raw_data.get("description", ""),
             description_html=raw_data.get("description_html", ""),
-            description_shopline=shopline_html,
+            description_shopline="",
             source_url=raw_data.get("source_url", url),
+        )
+        update_job(job_id, status="awaiting_review", progress=None, result=review_result)
+    except Exception as e:
+        update_job(job_id, status="failed", error=str(e), progress=None)
+
+async def _finalize_job(job_id: str, description_html: str, product_name: str,
+                        product_model: str, summary: str, description: str,
+                        source_url: str, api_key: str, ai_model: str | None):
+    """Generate Shopline HTML and package results."""
+    try:
+        update_job(job_id, status="processing", progress="正在生成 Shopline HTML...")
+        shopline_html = ""
+        if description_html:
+            shopline_html = await generate_shopline_html(
+                product_name, product_model, summary,
+                description_html, api_key, ai_model,
+            )
+
+        result = ProductResult(
+            product_name=product_name,
+            product_model=product_model,
+            summary=summary,
+            description=description,
+            description_html=description_html,
+            description_shopline=shopline_html,
+            source_url=source_url,
         )
 
         update_job(job_id, progress="Packaging results...")
         job_dir = os.path.join(JOBS_DIR, job_id)
         os.makedirs(job_dir, exist_ok=True)
         await create_package(result, job_dir)
+        clear_job_internal(job_id)
         update_job(job_id, status="completed", progress=None, result=result)
     except Exception as e:
         update_job(job_id, status="failed", error=str(e), progress=None)
+
+
+async def _refine_extraction(job_id: str, instructions: str):
+    """Re-run AI extraction with user instructions, then return to review."""
+    try:
+        internal = get_job_internal(job_id)
+        raw_html = internal.get("raw_html", "")
+        api_key = internal["api_key"]
+        ai_model = internal.get("ai_model")
+        analysis = internal.get("analysis")
+        product_name = internal.get("product_name", "")
+
+        if not raw_html:
+            update_job(job_id, status="failed", error="Raw HTML not available for refine", progress=None)
+            return
+
+        update_job(job_id, status="processing", progress="AI 正在根據指示重新提取...")
+        ai_desc = await extract_description_with_ai(
+            raw_html, product_name, api_key, ai_model,
+            analysis=analysis, extra_instructions=instructions,
+        )
+
+        if ai_desc:
+            update_job(job_id, progress="AI 正在優化內容...")
+            ai_desc = await clean_description_with_ai(
+                ai_desc, product_name, api_key, ai_model, analysis=analysis,
+            )
+
+        # Update the review result with refined description
+        job = get_job(job_id)
+        if job and job.result:
+            updated_result = job.result.model_copy(update={
+                "description_html": ai_desc or job.result.description_html,
+            })
+            update_job(job_id, status="awaiting_review", progress=None, result=updated_result)
+        else:
+            update_job(job_id, status="awaiting_review", progress=None)
+    except Exception as e:
+        update_job(job_id, status="failed", error=str(e), progress=None)
+
+
+@router.post("/scrape/{job_id}/review")
+async def submit_review(job_id: str, review: ReviewAction):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "awaiting_review":
+        raise HTTPException(status_code=400, detail="Job is not awaiting review")
+
+    if review.action == "confirm":
+        internal = get_job_internal(job_id)
+        asyncio.create_task(_finalize_job(
+            job_id,
+            description_html=job.result.description_html if job.result else "",
+            product_name=job.result.product_name if job.result else "",
+            product_model=job.result.product_model if job.result else "product",
+            summary=job.result.summary if job.result else "",
+            description=job.result.description if job.result else "",
+            source_url=job.result.source_url if job.result else "",
+            api_key=internal.get("api_key", ""),
+            ai_model=internal.get("ai_model"),
+        ))
+        update_job(job_id, status="processing", progress="正在生成 Shopline HTML...")
+        return {"status": "processing"}
+    else:
+        asyncio.create_task(_refine_extraction(job_id, review.instructions))
+        update_job(job_id, status="processing", progress="AI 正在根據指示重新提取...")
+        return {"status": "processing"}
+
 
 @router.post("/scrape")
 async def submit_scrape(request: ScrapeRequest):

@@ -5,6 +5,8 @@ from app.models.schemas import ScrapeStatus
 # In-memory job storage
 jobs: dict[str, ScrapeStatus] = {}
 job_timestamps: dict[str, datetime] = {}
+# Internal data not exposed via API (raw_html, api_key, etc. for review/refine)
+job_internal: dict[str, dict] = {}
 
 def create_job(job_id: str) -> ScrapeStatus:
     status = ScrapeStatus(job_id=job_id, status="processing", progress="Starting...")
@@ -21,3 +23,14 @@ def update_job(job_id: str, **kwargs):
 
 def get_job(job_id: str) -> ScrapeStatus | None:
     return jobs.get(job_id)
+
+def set_job_internal(job_id: str, **kwargs):
+    if job_id not in job_internal:
+        job_internal[job_id] = {}
+    job_internal[job_id].update(kwargs)
+
+def get_job_internal(job_id: str) -> dict:
+    return job_internal.get(job_id, {})
+
+def clear_job_internal(job_id: str):
+    job_internal.pop(job_id, None)

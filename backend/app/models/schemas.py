@@ -18,7 +18,11 @@ class ProductResult(BaseModel):
 
 class ScrapeStatus(BaseModel):
     job_id: str
-    status: Literal["processing", "completed", "failed"]
+    status: Literal["processing", "awaiting_review", "completed", "failed"]
     progress: str | None = None
     result: ProductResult | None = None
     error: str | None = None
+
+class ReviewAction(BaseModel):
+    action: Literal["confirm", "refine"]
+    instructions: str = ""
