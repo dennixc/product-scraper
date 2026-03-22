@@ -31,6 +31,13 @@ interface ReviewPanelProps {
 export function ReviewPanel({ result, onConfirm, onRefine, isRefining }: ReviewPanelProps) {
   const [htmlView, setHtmlView] = useState<"preview" | "text" | "source">("preview");
   const [instructions, setInstructions] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleRefine = () => {
     if (instructions.trim()) {
@@ -71,37 +78,56 @@ export function ReviewPanel({ result, onConfirm, onRefine, isRefining }: ReviewP
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">提取結果預覽</CardTitle>
-              <div className="flex rounded-md border">
-                <button
-                  onClick={() => setHtmlView("preview")}
-                  className={`px-3 py-1 text-xs font-medium rounded-l-md transition-colors ${
-                    htmlView === "preview"
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  }`}
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-md border">
+                  <button
+                    onClick={() => setHtmlView("preview")}
+                    className={`px-3 py-1 text-xs font-medium rounded-l-md transition-colors ${
+                      htmlView === "preview"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    預覽
+                  </button>
+                  <button
+                    onClick={() => setHtmlView("text")}
+                    className={`px-3 py-1 text-xs font-medium border-x transition-colors ${
+                      htmlView === "text"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    純文字
+                  </button>
+                  <button
+                    onClick={() => setHtmlView("source")}
+                    className={`px-3 py-1 text-xs font-medium rounded-r-md transition-colors ${
+                      htmlView === "source"
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    原始碼
+                  </button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    copyToClipboard(
+                      htmlView === "text"
+                        ? htmlToText(result.description_html)
+                        : result.description_html
+                    )
+                  }
                 >
-                  預覽
-                </button>
-                <button
-                  onClick={() => setHtmlView("text")}
-                  className={`px-3 py-1 text-xs font-medium border-x transition-colors ${
-                    htmlView === "text"
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  }`}
-                >
-                  純文字
-                </button>
-                <button
-                  onClick={() => setHtmlView("source")}
-                  className={`px-3 py-1 text-xs font-medium rounded-r-md transition-colors ${
-                    htmlView === "source"
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  }`}
-                >
-                  原始碼
-                </button>
+                  {copied
+                    ? "已複製 ✓"
+                    : htmlView === "text"
+                      ? "複製文字"
+                      : "複製 HTML"}
+                </Button>
               </div>
             </div>
           </CardHeader>
