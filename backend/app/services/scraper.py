@@ -143,14 +143,14 @@ async def fetch_with_playwright(url: str) -> str:
     return html
 
 
-def extract_all(soup: BeautifulSoup, url: str) -> dict:
+def extract_all(soup: BeautifulSoup, url: str, analysis: dict | None = None) -> dict:
     """Extract all product data from parsed HTML."""
     product_name = _extract_product_name(soup)
     product_model = _extract_model(soup, product_name, url)
     summary = _extract_summary(soup)
     description = _extract_description(soup)
     # _extract_description_html mutates soup — must be called last
-    description_html = _extract_description_html(soup)
+    description_html = _extract_description_html(soup, analysis)
 
     return {
         "product_name": product_name,
@@ -471,7 +471,7 @@ def _maybe_add_element(
     return False
 
 
-def _extract_description_html(soup: BeautifulSoup) -> str:
+def _extract_description_html(soup: BeautifulSoup, analysis: dict | None = None) -> str:
     """Extract clean HTML description suitable for Shopline product description.
 
     NOTE: This function mutates soup. It MUST be called last in scrape_product().
@@ -483,13 +483,34 @@ def _extract_description_html(soup: BeautifulSoup) -> str:
         for el in work_soup.select(selector):
             el.decompose()
 
-    # Find main content area
-    main = work_soup.find('main')
+    # Remove site-specific noise identified by AI analyzer
+    if analysis and analysis.get("noise_selectors"):
+        for selector in analysis["noise_selectors"]:
+            try:
+                for el in work_soup.select(selector):
+                    el.decompose()
+            except Exception:
+                pass  # Invalid selector — skip silently
+
+    # Find main content area — try AI-identified selectors first
+    main = None
+    if analysis and analysis.get("content_selectors"):
+        for selector in analysis["content_selectors"]:
+            try:
+                candidates = work_soup.select(selector)
+                if candidates:
+                    best = max(candidates, key=lambda el: len(el.get_text()))
+                    if len(best.get_text(strip=True)) >= 100:
+                        main = best
+                        break
+            except Exception:
+                continue
+
     if not main:
-        # Try article
+        main = work_soup.find('main')
+    if not main:
         main = work_soup.find('article')
     if not main:
-        # Try largest content div
         main = work_soup.find('body') or work_soup
 
     # Collect content elements

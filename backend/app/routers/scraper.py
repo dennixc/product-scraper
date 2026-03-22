@@ -109,14 +109,15 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
 
         # Step 5: Always run rule-based extraction for name/model/summary
         soup = BeautifulSoup(html, 'lxml')
-        raw_data = extract_all(soup, url)
+        raw_data = extract_all(soup, url, analysis=analysis)
         del soup
 
         # Step 6: Description extraction based on strategy
         if extraction_strategy == "ai_extraction":
             update_job(job_id, progress="AI 正在提取產品描述...")
             ai_desc = await extract_description_with_ai(
-                html, raw_data.get("product_name", ""), api_key, ai_model
+                html, raw_data.get("product_name", ""), api_key, ai_model,
+                analysis=analysis,
             )
             if ai_desc:
                 raw_data["description_html"] = ai_desc
@@ -129,7 +130,8 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
             if len(plain_text) < 500 and html:
                 update_job(job_id, progress="AI 正在補充提取描述...")
                 ai_desc = await extract_description_with_ai(
-                    html, raw_data.get("product_name", ""), api_key, ai_model
+                    html, raw_data.get("product_name", ""), api_key, ai_model,
+                    analysis=analysis,
                 )
                 if ai_desc:
                     raw_data["description_html"] = ai_desc
@@ -146,6 +148,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
                 raw_data.get("product_name", ""),
                 api_key,
                 ai_model,
+                analysis=analysis,
             )
 
         model = product_model or raw_data.get("product_model", "product")

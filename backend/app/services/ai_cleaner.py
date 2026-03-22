@@ -42,17 +42,32 @@ CLEAN_PROMPT = """你係一個商品描述篩選器。以下係從「{product_na
 DEFAULT_MODEL = "google/gemini-3-flash-preview"
 
 
+def _build_cleaner_hints(analysis: dict | None) -> str:
+    if not analysis:
+        return ""
+    if analysis.get("content_language"):
+        return f"\n\n注意：內容主要語言係 {analysis['content_language']}，呢個語言嘅內容都係有用嘅，唔好因為語言而移除。"
+    return ""
+
+
 async def clean_description_with_ai(
     raw_html: str,
     product_name: str,
     api_key: str,
     model: str | None = None,
+    analysis: dict | None = None,
 ) -> str:
     """用 OpenRouter AI 清理 description_html，移除重複/無關內容。
 
     如果 AI call 失敗，return 原本嘅 raw_html（graceful fallback）。
     """
     try:
+        prompt_text = CLEAN_PROMPT.format(
+            product_name=product_name,
+            raw_html=_truncate_html(raw_html),
+        )
+        prompt_text += _build_cleaner_hints(analysis)
+
         client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
@@ -63,10 +78,7 @@ async def clean_description_with_ai(
             messages=[
                 {
                     "role": "user",
-                    "content": CLEAN_PROMPT.format(
-                        product_name=product_name,
-                        raw_html=_truncate_html(raw_html),
-                    ),
+                    "content": prompt_text,
                 }
             ],
         )

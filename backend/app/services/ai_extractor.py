@@ -15,7 +15,7 @@ REMOVE_SELECTORS = [
 ]
 
 EXTRACT_PROMPT = """你係一個產品描述提取器。以下係「{product_name}」產品頁面嘅 HTML 內容。
-
+{analysis_hints}
 你嘅工作：從中提取所有同產品相關嘅描述內容，包括功能特色、技術規格、賣點等。
 
 規則：
@@ -35,13 +35,44 @@ EXTRACT_PROMPT = """你係一個產品描述提取器。以下係「{product_nam
 DEFAULT_MODEL = "google/gemini-3-flash-preview"
 
 
-def _prepare_html(raw_html: str) -> str:
+def _build_analysis_hints(analysis: dict | None) -> str:
+    if not analysis:
+        return ""
+    parts = []
+    if analysis.get("content_selectors"):
+        parts.append(f"產品描述可能喺以下區域: {', '.join(analysis['content_selectors'])}")
+    if analysis.get("content_structure"):
+        structure_desc = {
+            "semantic": "頁面用語義化 HTML (h2/h3/p/ul/table)",
+            "div_heavy": "頁面用多層 div 嵌套、可能有 hash class names",
+            "mixed": "頁面混合語義標籤同 div 嵌套",
+        }
+        desc = structure_desc.get(analysis["content_structure"])
+        if desc:
+            parts.append(desc)
+    if analysis.get("content_language"):
+        parts.append(f"內容主要語言: {analysis['content_language']}")
+    if not parts:
+        return ""
+    return "\n## 頁面結構提示\n" + "\n".join(f"- {p}" for p in parts)
+
+
+def _prepare_html(raw_html: str, analysis: dict | None = None) -> str:
     """Clean and truncate raw HTML for AI extraction."""
     soup = BeautifulSoup(raw_html, 'lxml')
 
     for selector in REMOVE_SELECTORS:
         for el in soup.select(selector):
             el.decompose()
+
+    # Remove site-specific noise identified by AI analyzer
+    if analysis and analysis.get("noise_selectors"):
+        for selector in analysis["noise_selectors"]:
+            try:
+                for el in soup.select(selector):
+                    el.decompose()
+            except Exception:
+                pass
 
     main = soup.find('main') or soup.find('body') or soup
     html = str(main)
@@ -60,13 +91,14 @@ async def extract_description_with_ai(
     product_name: str,
     api_key: str,
     model: str | None = None,
+    analysis: dict | None = None,
 ) -> str:
     """用 AI 從 raw HTML 提取產品描述。
 
     如果 AI call 失敗，return 空 string（caller 會 fall back 用 rule-based 結果）。
     """
     try:
-        prepared = _prepare_html(raw_html)
+        prepared = _prepare_html(raw_html, analysis)
         if not prepared or len(prepared) < 100:
             return ""
 
@@ -82,6 +114,7 @@ async def extract_description_with_ai(
                     "role": "user",
                     "content": EXTRACT_PROMPT.format(
                         product_name=product_name,
+                        analysis_hints=_build_analysis_hints(analysis),
                         html=prepared,
                     ),
                 }
