@@ -134,15 +134,15 @@ export function ReviewPanel({ result, onConfirm, onRefine, isRefining }: ReviewP
           <CardContent>
             {htmlView === "preview" ? (
               <div
-                className="prose prose-sm max-w-none dark:prose-invert max-h-96 overflow-y-auto"
+                className="prose prose-sm max-w-none dark:prose-invert max-h-[48rem] overflow-y-auto"
                 dangerouslySetInnerHTML={{ __html: result.description_html }}
               />
             ) : htmlView === "text" ? (
-              <div className="text-sm whitespace-pre-wrap p-4 bg-muted rounded-md max-h-96 overflow-y-auto">
+              <div className="text-sm whitespace-pre-wrap p-4 bg-muted rounded-md max-h-[48rem] overflow-y-auto">
                 {htmlToText(result.description_html)}
               </div>
             ) : (
-              <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
+              <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-[48rem] overflow-y-auto">
                 {result.description_html}
               </pre>
             )}
