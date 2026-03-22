@@ -22,7 +22,7 @@ ALLOWED_TAGS = {
 # Boilerplate / disclaimer patterns — if element text matches any, skip it
 BOILERPLATE_PATTERNS = [
     # 法律 / 免責聲明
-    r'FCC', r'認證', r'恕不另行通知', r'如有更改',
+    r'FCC', r'恕不另行通知', r'如有更改',
     r'商標聲明', r'註冊商標', r'版權',
     r'僅供參考', r'僅做識別之用',
     r'All rights reserved', r'subject to change',
@@ -33,7 +33,7 @@ BOILERPLATE_PATTERNS = [
     r'USB 外接硬碟', r'電源供應',
     r'第三方服務', r'第三方供應商',
     # Footer 推廣
-    r'免運', r'客服即時通', r'售後服務', r'鑑賞期',
+    r'免運', r'客服即時通', r'鑑賞期',
     r'SSL.*加密', r'安心.*付款',
     # 網站導航 / 企業資訊
     r'投資人關係', r'企業社會責任', r'新聞中心',
@@ -366,10 +366,10 @@ def _extract_description(soup: BeautifulSoup) -> str:
     main = soup.find('main') or soup.find('article') or soup.find('body') or soup
     leaf_texts = []
     for el in main.find_all(['div', 'section', 'span']):
-        if el.find(_BLOCK_TAGS):
+        if el.find(_CONTAINER_TAGS):
             continue
         text = el.get_text(strip=True)
-        if len(text) >= 40 and not BOILERPLATE_RE.search(text):
+        if len(text) >= 20 and not BOILERPLATE_RE.search(text):
             norm = _normalize_text(text)
             if norm not in seen_texts:
                 seen_texts.add(norm)
@@ -403,10 +403,9 @@ def _clean_tag(tag: Tag) -> Tag | None:
     return tag
 
 
-# Block-level tags used to identify "leaf" containers in Phase 2
-_BLOCK_TAGS = {'div', 'section', 'article', 'aside', 'main', 'header', 'footer', 'nav',
-               'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'table', 'blockquote',
-               'figure', 'figcaption', 'details', 'summary', 'form', 'fieldset', 'pre'}
+# Container tags — Phase 2 skips divs that contain nested containers (to avoid duplication)
+# but allows divs containing semantic content tags (p, ul, table etc.)
+_CONTAINER_TAGS = {'div', 'section', 'article', 'aside', 'main'}
 
 
 def _maybe_add_element(
@@ -450,9 +449,9 @@ def _maybe_add_element(
     if el.name in ('ul', 'ol'):
         if el.find(['h2', 'h3', 'h4']):
             return False
-        # Skip short-text link lists (likely navigation)
+        # Skip short-text link lists (likely navigation) — need >=4 very short items
         items = el.find_all('li')
-        if items and all(len(li.get_text(strip=True)) < 30 for li in items):
+        if len(items) >= 4 and all(len(li.get_text(strip=True)) < 15 for li in items):
             return False
 
     # Clean the element — keep only allowed tags, strip attributes
@@ -521,13 +520,13 @@ def _extract_description_html(soup: BeautifulSoup, analysis: dict | None = None)
     for el in main.find_all(['h2', 'h3', 'h4', 'p', 'ul', 'ol', 'table']):
         _maybe_add_element(el, seen_texts, content_parts)
 
-    # Phase 2: Leaf containers — div/section/span with text but no block-level children
+    # Phase 2: Content containers — div/section/span without nested container divs
     # This captures SPA content rendered inside Vue/React components
     for el in main.find_all(['div', 'section', 'span']):
-        # Skip if it contains block-level children (not a "leaf")
-        if el.find(_BLOCK_TAGS):
+        # Skip if it contains nested container divs (to avoid duplication)
+        if el.find(_CONTAINER_TAGS):
             continue
-        _maybe_add_element(el, seen_texts, content_parts, min_length=40)
+        _maybe_add_element(el, seen_texts, content_parts, min_length=20)
 
     return "\n".join(content_parts)
 
