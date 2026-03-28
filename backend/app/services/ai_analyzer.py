@@ -4,7 +4,7 @@ import re
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 
-DEFAULT_MODEL = "minimax/minimax-m2.7"
+DEFAULT_MODEL = "deepseek/deepseek-chat-v3-0324"
 
 ANALYZE_PROMPT = """你係一個網頁結構分析器。以下係一個產品頁面嘅 HTML 結構摘要。
 
