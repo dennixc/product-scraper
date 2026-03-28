@@ -4,7 +4,7 @@ import re
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 
-DEFAULT_MODEL = "google/gemini-3-flash-preview"
+DEFAULT_MODEL = "anthropic/claude-3.5-haiku"
 
 ANALYZE_PROMPT = """你係一個網頁結構分析器。以下係一個產品頁面嘅 HTML 結構摘要。
 
