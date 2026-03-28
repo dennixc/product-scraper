@@ -39,7 +39,7 @@ CLEAN_PROMPT = """你係一個商品描述篩選器。以下係從「{product_na
 {raw_html}
 """
 
-DEFAULT_MODEL = "anthropic/claude-3.5-haiku"
+DEFAULT_MODEL = "deepseek/deepseek-chat-v3-0324"
 
 
 def _build_cleaner_hints(analysis: dict | None) -> str:

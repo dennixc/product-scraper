@@ -15,9 +15,9 @@ const API_KEY_STORAGE_KEY = "openrouter_api_key";
 const AI_MODEL_STORAGE_KEY = "openrouter_ai_model";
 
 const AI_MODELS = [
-  { value: "anthropic/claude-3.5-haiku", label: "Claude 3.5 Haiku" },
-  { value: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4" },
-  { value: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
+  { value: "deepseek/deepseek-chat-v3-0324", label: "DeepSeek V3" },
+  { value: "qwen/qwen3-235b-a22b", label: "Qwen3 235B" },
+  { value: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick" },
 ];
 
 interface ScrapeFormProps {

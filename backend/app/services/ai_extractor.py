@@ -32,7 +32,7 @@ EXTRACT_PROMPT = """你係一個產品描述提取器。以下係「{product_nam
 {html}
 """
 
-DEFAULT_MODEL = "anthropic/claude-3.5-haiku"
+DEFAULT_MODEL = "deepseek/deepseek-chat-v3-0324"
 
 
 def _build_analysis_hints(analysis: dict | None) -> str:
