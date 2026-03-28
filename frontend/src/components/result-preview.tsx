@@ -52,6 +52,16 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
   return (
     <div className="space-y-4">
       {/* Shopline HTML — Primary output */}
+      {!result.description_shopline && result.description_html && (
+        <Card>
+          <CardContent className="py-6">
+            <div className="text-center text-sm text-muted-foreground">
+              <p>Shopline HTML 生成失敗，請檢查 API key 或稍後再試。</p>
+              <p className="mt-1">你仍然可以喺下方複製原始提取 HTML。</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {result.description_shopline && (
         <Card>
           <CardHeader>

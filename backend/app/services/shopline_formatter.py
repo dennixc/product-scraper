@@ -1,4 +1,7 @@
+import logging
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 MAX_HTML_CHARS = 100_000
 
@@ -142,4 +145,5 @@ async def generate_shopline_html(
             return result.strip()
         return ""
     except Exception:
+        logger.exception("Shopline HTML generation failed")
         return ""
