@@ -15,8 +15,9 @@ const API_KEY_STORAGE_KEY = "openrouter_api_key";
 const AI_MODEL_STORAGE_KEY = "openrouter_ai_model";
 
 const AI_MODELS = [
-  { value: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
-  { value: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
+  { value: "anthropic/claude-3.5-haiku", label: "Claude 3.5 Haiku" },
+  { value: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4" },
+  { value: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
 ];
 
 interface ScrapeFormProps {
@@ -35,7 +36,13 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
     const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
     if (savedKey) setApiKey(savedKey);
     const savedModel = localStorage.getItem(AI_MODEL_STORAGE_KEY);
-    if (savedModel) setAiModel(savedModel);
+    const validValues = AI_MODELS.map((m) => m.value);
+    if (savedModel && validValues.includes(savedModel)) {
+      setAiModel(savedModel);
+    } else {
+      // Clear stale model from localStorage (e.g. banned Google models)
+      localStorage.removeItem(AI_MODEL_STORAGE_KEY);
+    }
   }, []);
 
   const handleApiKeyChange = (value: string) => {
