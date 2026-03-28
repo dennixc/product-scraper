@@ -15,7 +15,7 @@ const API_KEY_STORAGE_KEY = "openrouter_api_key";
 const AI_MODEL_STORAGE_KEY = "openrouter_ai_model";
 
 const AI_MODELS = [
-  { value: "deepseek/deepseek-chat-v3-0324", label: "DeepSeek V3" },
+  { value: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2" },
   { value: "qwen/qwen3-235b-a22b", label: "Qwen3 235B" },
   { value: "minimax/minimax-m2.7", label: "MiniMax M2.7" },
 ];

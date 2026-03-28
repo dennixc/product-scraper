@@ -25,7 +25,7 @@ Product Data Scraper — a full-stack app that scrapes product info (name, model
 ## AI Features (requires OpenRouter API key)
 - **AI Content Cleaning** (`ai_cleaner.py`): 用 LLM 清理 description_html，移除重複/無關內容
 - **Shopline HTML** (`shopline_formatter.py`): 將產品資料轉換為帶 inline styles 嘅 Shopline 兼容 HTML（hero banner、feature cards、styled sections）
-- Default model: `deepseek/deepseek-chat-v3-0324`，用戶可自選 model
+- Default model: `deepseek/deepseek-v3.2`，用戶可自選 model
 
 ## Development
 
