@@ -144,6 +144,12 @@ async def generate_shopline_html(
                 result = result[:-3]
             return result.strip()
         return ""
-    except Exception:
+    except Exception as e:
         logger.exception("Shopline HTML generation failed")
-        return ""
+        error_msg = str(e).replace("<", "&lt;").replace(">", "&gt;")
+        return (
+            f'<div style="padding:24px;border:1px solid #e00;border-radius:8px;margin:16px 0">'
+            f'<p style="color:#e00;font-weight:600;margin:0 0 8px 0">Shopline HTML 生成失敗</p>'
+            f'<p style="color:#666;font-size:14px;margin:0">{error_msg}</p>'
+            f'</div>'
+        )
