@@ -61,3 +61,29 @@ export async function submitReview(
 export function getDownloadUrl(jobId: string): string {
   return `${API_BASE}/api/scrape/${jobId}/download`;
 }
+
+export interface TranslateResponse {
+  description_html: string;
+  description_shopline: string;
+}
+
+export async function translateResult(
+  jobId: string,
+  targetLanguage: "en" | "zh-TW",
+  apiKey: string,
+  aiModel?: string
+): Promise<TranslateResponse> {
+  const res = await fetch(`${API_BASE}/api/scrape/${jobId}/translate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      target_language: targetLanguage,
+      api_key: apiKey,
+      ai_model: aiModel || null,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`翻譯失敗: ${res.statusText}`);
+  }
+  return res.json();
+}

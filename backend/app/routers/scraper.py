@@ -6,7 +6,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from bs4 import BeautifulSoup
-from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction
+from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction, TranslateRequest, TranslateResponse
 from app.utils.background import (
     create_job, get_job, update_job,
     set_job_internal, get_job_internal, clear_job_internal,
@@ -20,6 +20,7 @@ from app.services.ai_analyzer import analyze_page_structure
 from app.services.ai_cleaner import clean_description_with_ai
 from app.services.ai_extractor import extract_description_with_ai
 from app.services.shopline_formatter import generate_shopline_html
+from app.services.ai_translator import translate_html
 
 router = APIRouter(prefix="/api")
 
@@ -276,6 +277,27 @@ async def submit_review(job_id: str, review: ReviewAction):
         asyncio.create_task(_refine_extraction(job_id, review.instructions))
         update_job(job_id, status="processing", progress="AI 正在根據指示重新提取...")
         return {"status": "processing"}
+
+
+@router.post("/scrape/{job_id}/translate")
+async def translate_job(job_id: str, req: TranslateRequest):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Job is not completed")
+    if not job.result:
+        raise HTTPException(status_code=400, detail="No result to translate")
+
+    translated_html, translated_shopline = await asyncio.gather(
+        translate_html(job.result.description_html, req.target_language, req.api_key, req.ai_model),
+        translate_html(job.result.description_shopline, req.target_language, req.api_key, req.ai_model),
+    )
+
+    return TranslateResponse(
+        description_html=translated_html,
+        description_shopline=translated_shopline,
+    )
 
 
 @router.post("/scrape")

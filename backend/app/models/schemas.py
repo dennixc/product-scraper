@@ -26,3 +26,12 @@ class ScrapeStatus(BaseModel):
 class ReviewAction(BaseModel):
     action: Literal["confirm", "refine"]
     instructions: str = ""
+
+class TranslateRequest(BaseModel):
+    target_language: Literal["en", "zh-TW"]
+    api_key: str
+    ai_model: str | None = None
+
+class TranslateResponse(BaseModel):
+    description_html: str
+    description_shopline: str

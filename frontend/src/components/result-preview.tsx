@@ -14,6 +14,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import type { ProductResult } from "@/lib/api";
+import { translateResult, type TranslateResponse } from "@/lib/api";
 
 function htmlToText(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -26,12 +27,17 @@ function htmlToText(html: string): string {
   return lines.join("\n\n");
 }
 
+type TranslationState = "original" | "en" | "zh-TW";
+
 interface ResultPreviewProps {
   result: ProductResult;
   downloadUrl: string;
+  jobId: string;
+  apiKey?: string;
+  aiModel?: string;
 }
 
-export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
+export function ResultPreview({ result, downloadUrl, jobId, apiKey, aiModel }: ResultPreviewProps) {
   const [htmlView, setHtmlView] = useState<"preview" | "text" | "source">("preview");
   const [shoplineView, setShoplineView] = useState<"preview" | "text" | "source">("preview");
   const [htmlCopied, setHtmlCopied] = useState(false);
@@ -49,10 +55,122 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
 
   const [rawHtmlOpen, setRawHtmlOpen] = useState(false);
 
+  // Translation state
+  const [translationState, setTranslationState] = useState<TranslationState>("original");
+  const [translatedCache, setTranslatedCache] = useState<Record<string, TranslateResponse>>({});
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState<string | null>(null);
+
+  const handleTranslate = async (target: TranslationState) => {
+    if (target === "original") {
+      setTranslationState("original");
+      setTranslateError(null);
+      return;
+    }
+
+    // Use cache if available
+    if (translatedCache[target]) {
+      setTranslationState(target);
+      setTranslateError(null);
+      return;
+    }
+
+    if (!apiKey) {
+      setTranslateError("需要 API key 先可以翻譯");
+      return;
+    }
+
+    setIsTranslating(true);
+    setTranslateError(null);
+    try {
+      const translated = await translateResult(jobId, target, apiKey, aiModel);
+      setTranslatedCache((prev) => ({ ...prev, [target]: translated }));
+      setTranslationState(target);
+    } catch (err) {
+      setTranslateError(err instanceof Error ? err.message : "翻譯失敗");
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  // Resolve displayed content based on translation state
+  const displayShopline =
+    translationState !== "original" && translatedCache[translationState]
+      ? translatedCache[translationState].description_shopline
+      : result.description_shopline;
+
+  const displayHtml =
+    translationState !== "original" && translatedCache[translationState]
+      ? translatedCache[translationState].description_html
+      : result.description_html;
+
   return (
     <div className="space-y-4">
+      {/* Translation toolbar */}
+      {apiKey && (
+        <Card>
+          <CardContent className="py-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm font-medium text-muted-foreground">翻譯：</span>
+              <div className="flex rounded-md border">
+                <button
+                  onClick={() => handleTranslate("original")}
+                  disabled={isTranslating}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-l-md transition-colors ${
+                    translationState === "original"
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  } ${isTranslating ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  原文
+                </button>
+                <button
+                  onClick={() => handleTranslate("en")}
+                  disabled={isTranslating}
+                  className={`px-3 py-1.5 text-sm font-medium border-x transition-colors ${
+                    translationState === "en"
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  } ${isTranslating ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  English
+                </button>
+                <button
+                  onClick={() => handleTranslate("zh-TW")}
+                  disabled={isTranslating}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-r-md transition-colors ${
+                    translationState === "zh-TW"
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  } ${isTranslating ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  繁體中文
+                </button>
+              </div>
+              {isTranslating && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <svg
+                    className="animate-spin h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  翻譯中...
+                </div>
+              )}
+              {translateError && (
+                <span className="text-sm text-destructive">{translateError}</span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Shopline HTML — Primary output */}
-      {!result.description_shopline && result.description_html && (
+      {!displayShopline && displayHtml && (
         <Card>
           <CardContent className="py-6">
             <div className="text-center text-sm text-muted-foreground">
@@ -62,7 +180,7 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
           </CardContent>
         </Card>
       )}
-      {result.description_shopline && (
+      {displayShopline && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -106,8 +224,8 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
                   onClick={() =>
                     copyToClipboard(
                       shoplineView === "text"
-                        ? htmlToText(result.description_shopline)
-                        : result.description_shopline,
+                        ? htmlToText(displayShopline)
+                        : displayShopline,
                       "shopline"
                     )
                   }
@@ -124,15 +242,15 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
           <CardContent>
             {shoplineView === "preview" ? (
               <div
-                dangerouslySetInnerHTML={{ __html: result.description_shopline }}
+                dangerouslySetInnerHTML={{ __html: displayShopline }}
               />
             ) : shoplineView === "text" ? (
               <div className="text-sm whitespace-pre-wrap p-4 bg-muted rounded-md max-h-96 overflow-y-auto">
-                {htmlToText(result.description_shopline)}
+                {htmlToText(displayShopline)}
               </div>
             ) : (
               <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
-                {result.description_shopline}
+                {displayShopline}
               </pre>
             )}
           </CardContent>
@@ -169,7 +287,7 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
       </Card>
 
       {/* Raw Description HTML — Collapsible secondary section */}
-      {result.description_html && (
+      {displayHtml && (
         <Collapsible open={rawHtmlOpen} onOpenChange={setRawHtmlOpen}>
           <Card>
             <CardHeader>
@@ -225,8 +343,8 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
                       onClick={() =>
                         copyToClipboard(
                           htmlView === "text"
-                            ? htmlToText(result.description_html)
-                            : result.description_html,
+                            ? htmlToText(displayHtml)
+                            : displayHtml,
                           "html"
                         )
                       }
@@ -246,15 +364,15 @@ export function ResultPreview({ result, downloadUrl }: ResultPreviewProps) {
                 {htmlView === "preview" ? (
                   <div
                     className="prose prose-sm max-w-none dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: result.description_html }}
+                    dangerouslySetInnerHTML={{ __html: displayHtml }}
                   />
                 ) : htmlView === "text" ? (
                   <div className="text-sm whitespace-pre-wrap p-4 bg-muted rounded-md max-h-96 overflow-y-auto">
-                    {htmlToText(result.description_html)}
+                    {htmlToText(displayHtml)}
                   </div>
                 ) : (
                   <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
-                    {result.description_html}
+                    {displayHtml}
                   </pre>
                 )}
               </CardContent>
