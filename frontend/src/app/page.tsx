@@ -19,12 +19,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [pollTrigger, setPollTrigger] = useState(0);
 
-  const [apiKey, setApiKey] = useState<string | undefined>();
-  const [aiModel, setAiModel] = useState<string | undefined>();
-
   const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string) => {
-    setApiKey(apiKey);
-    setAiModel(aiModel);
     setIsLoading(true);
     setError(null);
     setStatus(null);
@@ -160,9 +155,10 @@ export default function Home() {
         )}
 
         {/* Review Panel — shown when awaiting_review */}
-        {isReviewing && result && (
+        {isReviewing && result && jobId && (
           <ReviewPanel
             result={result}
+            jobId={jobId}
             onConfirm={handleConfirm}
             onRefine={handleRefine}
             isRefining={isLoading}
@@ -175,8 +171,6 @@ export default function Home() {
             result={result}
             downloadUrl={getDownloadUrl(jobId)}
             jobId={jobId}
-            apiKey={apiKey}
-            aiModel={aiModel}
           />
         )}
       </div>

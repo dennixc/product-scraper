@@ -284,8 +284,8 @@ async def translate_job(job_id: str, req: TranslateRequest):
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status != "completed":
-        raise HTTPException(status_code=400, detail="Job is not completed")
+    if job.status not in ("completed", "awaiting_review"):
+        raise HTTPException(status_code=400, detail="Job is not ready for translation")
     if not job.result:
         raise HTTPException(status_code=400, detail="No result to translate")
 

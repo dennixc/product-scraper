@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { ProductResult } from "@/lib/api";
+import { translateResult, type TranslateResponse } from "@/lib/api";
 
 function htmlToText(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -21,14 +22,17 @@ function htmlToText(html: string): string {
   return lines.join("\n\n");
 }
 
+type TranslationState = "original" | "en" | "zh-TW";
+
 interface ReviewPanelProps {
   result: ProductResult;
+  jobId: string;
   onConfirm: () => void;
   onRefine: (instructions: string) => void;
   isRefining: boolean;
 }
 
-export function ReviewPanel({ result, onConfirm, onRefine, isRefining }: ReviewPanelProps) {
+export function ReviewPanel({ result, jobId, onConfirm, onRefine, isRefining }: ReviewPanelProps) {
   const [htmlView, setHtmlView] = useState<"preview" | "text" | "source">("preview");
   const [instructions, setInstructions] = useState("");
   const [copied, setCopied] = useState(false);
@@ -45,6 +49,56 @@ export function ReviewPanel({ result, onConfirm, onRefine, isRefining }: ReviewP
       setInstructions("");
     }
   };
+
+  // Read API key from localStorage
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [aiModel, setAiModel] = useState<string | null>(null);
+  useEffect(() => {
+    setApiKey(localStorage.getItem("openrouter_api_key"));
+    setAiModel(localStorage.getItem("openrouter_ai_model"));
+  }, []);
+
+  // Translation state
+  const [translationState, setTranslationState] = useState<TranslationState>("original");
+  const [translatedCache, setTranslatedCache] = useState<Record<string, TranslateResponse>>({});
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState<string | null>(null);
+
+  const handleTranslate = async (target: TranslationState) => {
+    if (target === "original") {
+      setTranslationState("original");
+      setTranslateError(null);
+      return;
+    }
+
+    if (translatedCache[target]) {
+      setTranslationState(target);
+      setTranslateError(null);
+      return;
+    }
+
+    if (!apiKey) {
+      setTranslateError("需要 API key 先可以翻譯");
+      return;
+    }
+
+    setIsTranslating(true);
+    setTranslateError(null);
+    try {
+      const translated = await translateResult(jobId, target, apiKey, aiModel || undefined);
+      setTranslatedCache((prev) => ({ ...prev, [target]: translated }));
+      setTranslationState(target);
+    } catch (err) {
+      setTranslateError(err instanceof Error ? err.message : "翻譯失敗");
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const displayHtml =
+    translationState !== "original" && translatedCache[translationState]
+      ? translatedCache[translationState].description_html
+      : result.description_html;
 
   return (
     <div className="space-y-4">
@@ -72,8 +126,71 @@ export function ReviewPanel({ result, onConfirm, onRefine, isRefining }: ReviewP
         </CardContent>
       </Card>
 
+      {/* Translation toolbar */}
+      {apiKey && (
+        <Card>
+          <CardContent className="py-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm font-medium text-muted-foreground">翻譯：</span>
+              <div className="flex rounded-md border">
+                <button
+                  onClick={() => handleTranslate("original")}
+                  disabled={isTranslating}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-l-md transition-colors ${
+                    translationState === "original"
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  } ${isTranslating ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  原文
+                </button>
+                <button
+                  onClick={() => handleTranslate("en")}
+                  disabled={isTranslating}
+                  className={`px-3 py-1.5 text-sm font-medium border-x transition-colors ${
+                    translationState === "en"
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  } ${isTranslating ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  English
+                </button>
+                <button
+                  onClick={() => handleTranslate("zh-TW")}
+                  disabled={isTranslating}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-r-md transition-colors ${
+                    translationState === "zh-TW"
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  } ${isTranslating ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  繁體中文
+                </button>
+              </div>
+              {isTranslating && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <svg
+                    className="animate-spin h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  翻譯中...
+                </div>
+              )}
+              {translateError && (
+                <span className="text-sm text-destructive">{translateError}</span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Description HTML Preview */}
-      {result.description_html && (
+      {displayHtml && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -117,8 +234,8 @@ export function ReviewPanel({ result, onConfirm, onRefine, isRefining }: ReviewP
                   onClick={() =>
                     copyToClipboard(
                       htmlView === "text"
-                        ? htmlToText(result.description_html)
-                        : result.description_html
+                        ? htmlToText(displayHtml)
+                        : displayHtml
                     )
                   }
                 >
@@ -135,15 +252,15 @@ export function ReviewPanel({ result, onConfirm, onRefine, isRefining }: ReviewP
             {htmlView === "preview" ? (
               <div
                 className="prose prose-sm max-w-none dark:prose-invert max-h-[48rem] overflow-y-auto"
-                dangerouslySetInnerHTML={{ __html: result.description_html }}
+                dangerouslySetInnerHTML={{ __html: displayHtml }}
               />
             ) : htmlView === "text" ? (
               <div className="text-sm whitespace-pre-wrap p-4 bg-muted rounded-md max-h-[48rem] overflow-y-auto">
-                {htmlToText(result.description_html)}
+                {htmlToText(displayHtml)}
               </div>
             ) : (
               <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-[48rem] overflow-y-auto">
-                {result.description_html}
+                {displayHtml}
               </pre>
             )}
           </CardContent>

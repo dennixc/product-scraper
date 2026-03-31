@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -33,11 +33,9 @@ interface ResultPreviewProps {
   result: ProductResult;
   downloadUrl: string;
   jobId: string;
-  apiKey?: string;
-  aiModel?: string;
 }
 
-export function ResultPreview({ result, downloadUrl, jobId, apiKey, aiModel }: ResultPreviewProps) {
+export function ResultPreview({ result, downloadUrl, jobId }: ResultPreviewProps) {
   const [htmlView, setHtmlView] = useState<"preview" | "text" | "source">("preview");
   const [shoplineView, setShoplineView] = useState<"preview" | "text" | "source">("preview");
   const [htmlCopied, setHtmlCopied] = useState(false);
@@ -55,6 +53,14 @@ export function ResultPreview({ result, downloadUrl, jobId, apiKey, aiModel }: R
 
   const [rawHtmlOpen, setRawHtmlOpen] = useState(false);
 
+  // Read API key from localStorage
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [aiModel, setAiModel] = useState<string | null>(null);
+  useEffect(() => {
+    setApiKey(localStorage.getItem("openrouter_api_key"));
+    setAiModel(localStorage.getItem("openrouter_ai_model"));
+  }, []);
+
   // Translation state
   const [translationState, setTranslationState] = useState<TranslationState>("original");
   const [translatedCache, setTranslatedCache] = useState<Record<string, TranslateResponse>>({});
@@ -68,7 +74,6 @@ export function ResultPreview({ result, downloadUrl, jobId, apiKey, aiModel }: R
       return;
     }
 
-    // Use cache if available
     if (translatedCache[target]) {
       setTranslationState(target);
       setTranslateError(null);
@@ -83,7 +88,7 @@ export function ResultPreview({ result, downloadUrl, jobId, apiKey, aiModel }: R
     setIsTranslating(true);
     setTranslateError(null);
     try {
-      const translated = await translateResult(jobId, target, apiKey, aiModel);
+      const translated = await translateResult(jobId, target, apiKey, aiModel || undefined);
       setTranslatedCache((prev) => ({ ...prev, [target]: translated }));
       setTranslationState(target);
     } catch (err) {
@@ -93,7 +98,6 @@ export function ResultPreview({ result, downloadUrl, jobId, apiKey, aiModel }: R
     }
   };
 
-  // Resolve displayed content based on translation state
   const displayShopline =
     translationState !== "original" && translatedCache[translationState]
       ? translatedCache[translationState].description_shopline
