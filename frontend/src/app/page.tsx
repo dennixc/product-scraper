@@ -52,9 +52,13 @@ export default function Home() {
   useEffect(() => {
     if (!jobId || !isLoading) return;
 
+    let failCount = 0;
+    const maxFails = 5;
+
     const interval = setInterval(async () => {
       try {
         const jobStatus = await getJobStatus(jobId);
+        failCount = 0; // reset on success
         setStatus(jobStatus);
 
         if (
@@ -70,11 +74,14 @@ export default function Home() {
           }
         }
       } catch {
-        clearInterval(interval);
-        setIsLoading(false);
-        setError("Failed to check job status");
+        failCount++;
+        if (failCount >= maxFails) {
+          clearInterval(interval);
+          setIsLoading(false);
+          setError("無法連接伺服器，請稍後重試");
+        }
       }
-    }, 1500);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [jobId, pollTrigger, isLoading]);
