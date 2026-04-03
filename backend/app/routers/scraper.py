@@ -31,13 +31,13 @@ JOBS_DIR = "/tmp/scraper_jobs"
 _scrape_semaphore = asyncio.Semaphore(1)
 JOB_TIMEOUT_SECONDS = 480  # 8 minutes — accommodates SPA + multiple AI calls
 
-async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None):
+async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None):
     try:
         update_job(job_id, progress="Waiting in queue...")
         async with _scrape_semaphore:
             try:
                 await asyncio.wait_for(
-                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model),
+                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model, reasoning_effort),
                     timeout=JOB_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
@@ -51,9 +51,9 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
     finally:
         clear_job_task(job_id)
 
-async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None):
+async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None):
     if api_key:
-        await _execute_with_ai(job_id, url, product_model, api_key, ai_model)
+        await _execute_with_ai(job_id, url, product_model, api_key, ai_model, reasoning_effort)
     else:
         await _execute_legacy(job_id, url, product_model)
 
@@ -85,7 +85,7 @@ async def _execute_legacy(job_id: str, url: str, product_model: str | None):
         update_job(job_id, status="failed", error=str(e), progress=None)
 
 
-async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api_key: str, ai_model: str | None):
+async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api_key: str, ai_model: str | None, reasoning_effort: str | None = None):
     """AI-guided path — uses AI to analyze page structure and choose optimal strategy."""
     try:
         # Step 1: Lightweight httpx fetch
@@ -99,7 +99,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
 
         if html:
             update_job(job_id, progress="AI 正在分析頁面結構...")
-            analysis = await analyze_page_structure(html, url, api_key, ai_model)
+            analysis = await analyze_page_structure(html, url, api_key, ai_model, reasoning_effort=reasoning_effort)
 
             if analysis:
                 needs_javascript = analysis["needs_javascript"]
@@ -121,7 +121,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
 
             # If we had no analysis yet (httpx failed), try analyzing Playwright HTML
             if analysis is None and html:
-                analysis = await analyze_page_structure(html, url, api_key, ai_model)
+                analysis = await analyze_page_structure(html, url, api_key, ai_model, reasoning_effort=reasoning_effort)
                 if analysis:
                     extraction_strategy = analysis["extraction_strategy"]
 
@@ -135,7 +135,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
             update_job(job_id, progress="AI 正在提取產品描述...")
             ai_desc = await extract_description_with_ai(
                 html, raw_data.get("product_name", ""), api_key, ai_model,
-                analysis=analysis,
+                analysis=analysis, reasoning_effort=reasoning_effort,
             )
             if ai_desc:
                 raw_data["description_html"] = ai_desc
@@ -149,7 +149,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
                 update_job(job_id, progress="AI 正在補充提取描述...")
                 ai_desc = await extract_description_with_ai(
                     html, raw_data.get("product_name", ""), api_key, ai_model,
-                    analysis=analysis,
+                    analysis=analysis, reasoning_effort=reasoning_effort,
                 )
                 if ai_desc:
                     raw_data["description_html"] = ai_desc
@@ -162,7 +162,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
                 raw_data.get("product_name", ""),
                 api_key,
                 ai_model,
-                analysis=analysis,
+                analysis=analysis, reasoning_effort=reasoning_effort,
             )
 
         model = product_model or raw_data.get("product_model", "product")
@@ -172,6 +172,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
             raw_html=html,
             api_key=api_key,
             ai_model=ai_model,
+            reasoning_effort=reasoning_effort,
             analysis=analysis,
             product_name=raw_data.get("product_name", ""),
             product_model=model,
@@ -194,7 +195,8 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
 
 async def _finalize_job(job_id: str, description_html: str, product_name: str,
                         product_model: str, summary: str, description: str,
-                        source_url: str, api_key: str, ai_model: str | None):
+                        source_url: str, api_key: str, ai_model: str | None,
+                        reasoning_effort: str | None = None):
     """Generate Shopline HTML and package results."""
     try:
         update_job(job_id, status="processing", progress="正在生成 Shopline HTML...")
@@ -203,6 +205,7 @@ async def _finalize_job(job_id: str, description_html: str, product_name: str,
             shopline_html = await generate_shopline_html(
                 product_name, product_model, summary,
                 description_html, api_key, ai_model,
+                reasoning_effort=reasoning_effort,
             )
 
         result = ProductResult(
@@ -232,6 +235,7 @@ async def _refine_extraction(job_id: str, instructions: str):
         raw_html = internal.get("raw_html", "")
         api_key = internal["api_key"]
         ai_model = internal.get("ai_model")
+        reasoning_effort = internal.get("reasoning_effort")
         analysis = internal.get("analysis")
         product_name = internal.get("product_name", "")
 
@@ -243,12 +247,14 @@ async def _refine_extraction(job_id: str, instructions: str):
         ai_desc = await extract_description_with_ai(
             raw_html, product_name, api_key, ai_model,
             analysis=analysis, extra_instructions=instructions,
+            reasoning_effort=reasoning_effort,
         )
 
         if ai_desc:
             update_job(job_id, progress="AI 正在優化內容...")
             ai_desc = await clean_description_with_ai(
-                ai_desc, product_name, api_key, ai_model, analysis=analysis,
+                ai_desc, product_name, api_key, ai_model,
+                analysis=analysis, reasoning_effort=reasoning_effort,
             )
 
         # Update the review result with refined description
@@ -284,6 +290,7 @@ async def submit_review(job_id: str, review: ReviewAction):
             source_url=job.result.source_url if job.result else "",
             api_key=internal.get("api_key", ""),
             ai_model=internal.get("ai_model"),
+            reasoning_effort=internal.get("reasoning_effort"),
         ))
         update_job(job_id, status="processing", progress="正在生成 Shopline HTML...")
         return {"status": "processing"}
@@ -318,7 +325,7 @@ async def translate_job(job_id: str, req: TranslateRequest):
 async def submit_scrape(request: ScrapeRequest):
     job_id = str(uuid.uuid4())
     create_job(job_id)
-    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model))
+    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model, request.reasoning_effort))
     set_job_task(job_id, task)
     return {"job_id": job_id, "status": "processing"}
 

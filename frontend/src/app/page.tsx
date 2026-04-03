@@ -20,14 +20,14 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [pollTrigger, setPollTrigger] = useState(0);
 
-  const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string) => {
+  const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string) => {
     setIsLoading(true);
     setError(null);
     setStatus(null);
     setJobId(null);
 
     try {
-      const response = await submitScrapeJob(url, productModel, apiKey, aiModel);
+      const response = await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort);
       setJobId(response.job_id);
       setPollTrigger((n) => n + 1);
     } catch (err) {

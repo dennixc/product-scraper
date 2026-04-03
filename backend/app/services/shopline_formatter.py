@@ -109,6 +109,7 @@ async def generate_shopline_html(
     description_html: str,
     api_key: str,
     model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     """用 OpenRouter AI 生成 Shopline 兼容嘅帶 inline styles HTML。
 
@@ -120,6 +121,9 @@ async def generate_shopline_html(
             api_key=api_key,
             timeout=90,
         )
+        extra = {}
+        if reasoning_effort:
+            extra["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
         response = await client.chat.completions.create(
             model=model or DEFAULT_MODEL,
             temperature=0.3,
@@ -134,6 +138,7 @@ async def generate_shopline_html(
                     ),
                 }
             ],
+            **extra,
         )
         result = response.choices[0].message.content
         if result:

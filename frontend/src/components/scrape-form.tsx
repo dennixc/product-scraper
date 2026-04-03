@@ -13,6 +13,14 @@ import {
 
 const API_KEY_STORAGE_KEY = "openrouter_api_key";
 const AI_MODEL_STORAGE_KEY = "openrouter_ai_model";
+const REASONING_EFFORT_STORAGE_KEY = "openrouter_reasoning_effort";
+
+const REASONING_EFFORTS = [
+  { value: "", label: "Default" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
 
 const AI_MODELS = [
   { value: "z-ai/glm-5", label: "GLM-5" },
@@ -22,7 +30,7 @@ const AI_MODELS = [
 ];
 
 interface ScrapeFormProps {
-  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string) => void;
+  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string) => void;
   isLoading: boolean;
 }
 
@@ -31,6 +39,7 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
   const [productModel, setProductModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [aiModel, setAiModel] = useState(AI_MODELS[0].value);
+  const [reasoningEffort, setReasoningEffort] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
@@ -41,8 +50,11 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
     if (savedModel && validValues.includes(savedModel)) {
       setAiModel(savedModel);
     } else {
-      // Clear stale model from localStorage (e.g. banned Google models)
       localStorage.removeItem(AI_MODEL_STORAGE_KEY);
+    }
+    const savedEffort = localStorage.getItem(REASONING_EFFORT_STORAGE_KEY);
+    if (savedEffort && REASONING_EFFORTS.some((e) => e.value === savedEffort)) {
+      setReasoningEffort(savedEffort);
     }
   }, []);
 
@@ -60,6 +72,15 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
     localStorage.setItem(AI_MODEL_STORAGE_KEY, value);
   };
 
+  const handleEffortChange = (value: string) => {
+    setReasoningEffort(value);
+    if (value) {
+      localStorage.setItem(REASONING_EFFORT_STORAGE_KEY, value);
+    } else {
+      localStorage.removeItem(REASONING_EFFORT_STORAGE_KEY);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
@@ -68,6 +89,7 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
       productModel.trim() || undefined,
       apiKey.trim() || undefined,
       apiKey.trim() ? aiModel : undefined,
+      apiKey.trim() && reasoningEffort ? reasoningEffort : undefined,
     );
   };
 
@@ -143,23 +165,43 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
                     提供 OpenRouter API Key 啟用 AI 內容去重同優化。Key 會儲存喺瀏覽器。
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <label htmlFor="aiModel" className="text-xs font-medium">
-                    AI Model
-                  </label>
-                  <select
-                    id="aiModel"
-                    value={aiModel}
-                    onChange={(e) => handleModelChange(e.target.value)}
-                    disabled={isLoading}
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {AI_MODELS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex gap-3">
+                  <div className="space-y-2 flex-1">
+                    <label htmlFor="aiModel" className="text-xs font-medium">
+                      AI Model
+                    </label>
+                    <select
+                      id="aiModel"
+                      value={aiModel}
+                      onChange={(e) => handleModelChange(e.target.value)}
+                      disabled={isLoading}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {AI_MODELS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2 w-28">
+                    <label htmlFor="reasoningEffort" className="text-xs font-medium">
+                      Effort
+                    </label>
+                    <select
+                      id="reasoningEffort"
+                      value={reasoningEffort}
+                      onChange={(e) => handleEffortChange(e.target.value)}
+                      disabled={isLoading}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {REASONING_EFFORTS.map((e) => (
+                        <option key={e.value} value={e.value}>
+                          {e.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
             )}

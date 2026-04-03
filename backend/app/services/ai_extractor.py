@@ -93,6 +93,7 @@ async def extract_description_with_ai(
     model: str | None = None,
     analysis: dict | None = None,
     extra_instructions: str = "",
+    reasoning_effort: str | None = None,
 ) -> str:
     """用 AI 從 raw HTML 提取產品描述。
 
@@ -116,6 +117,9 @@ async def extract_description_with_ai(
             api_key=api_key,
             timeout=90,
         )
+        extra = {}
+        if reasoning_effort:
+            extra["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
         response = await client.chat.completions.create(
             model=model or DEFAULT_MODEL,
             temperature=0,
@@ -125,6 +129,7 @@ async def extract_description_with_ai(
                     "content": prompt,
                 }
             ],
+            **extra,
         )
         result = response.choices[0].message.content
         return result.strip() if result else ""

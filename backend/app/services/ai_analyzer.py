@@ -107,7 +107,8 @@ def _prepare_structural_sample(raw_html: str) -> str:
 
 
 async def analyze_page_structure(
-    raw_html: str, url: str, api_key: str, model: str | None = None
+    raw_html: str, url: str, api_key: str, model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict | None:
     """Analyze page structure with AI to determine fetch method and extraction strategy.
 
@@ -124,6 +125,9 @@ async def analyze_page_structure(
             api_key=api_key,
             timeout=90,
         )
+        extra = {}
+        if reasoning_effort:
+            extra["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
         response = await client.chat.completions.create(
             model=model or DEFAULT_MODEL,
             temperature=0,
@@ -136,6 +140,7 @@ async def analyze_page_structure(
                     ),
                 }
             ],
+            **extra,
         )
         content = response.choices[0].message.content
         if not content:

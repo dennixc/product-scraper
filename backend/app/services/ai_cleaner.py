@@ -56,6 +56,7 @@ async def clean_description_with_ai(
     api_key: str,
     model: str | None = None,
     analysis: dict | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     """用 OpenRouter AI 清理 description_html，移除重複/無關內容。
 
@@ -73,6 +74,9 @@ async def clean_description_with_ai(
             api_key=api_key,
             timeout=90,
         )
+        extra = {}
+        if reasoning_effort:
+            extra["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
         response = await client.chat.completions.create(
             model=model or DEFAULT_MODEL,
             temperature=0,
@@ -82,6 +86,7 @@ async def clean_description_with_ai(
                     "content": prompt_text,
                 }
             ],
+            **extra,
         )
         cleaned = response.choices[0].message.content
         if cleaned:
