@@ -122,6 +122,7 @@ async def analyze_page_structure(
         client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
+            timeout=120,
         )
         response = await client.chat.completions.create(
             model=model or DEFAULT_MODEL,

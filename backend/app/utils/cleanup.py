@@ -2,7 +2,7 @@ import asyncio
 import shutil
 import os
 from datetime import datetime, timedelta
-from app.utils.background import jobs, job_timestamps
+from app.utils.background import jobs, job_timestamps, job_internal, job_tasks
 
 JOBS_DIR = "/tmp/scraper_jobs"
 MAX_AGE_MINUTES = 10
@@ -17,8 +17,12 @@ def cleanup_old_jobs():
     cutoff = datetime.now() - timedelta(minutes=MAX_AGE_MINUTES)
     expired = [jid for jid, ts in job_timestamps.items() if ts < cutoff]
     for jid in expired:
+        task = job_tasks.pop(jid, None)
+        if task and not task.done():
+            task.cancel()
         jobs.pop(jid, None)
         job_timestamps.pop(jid, None)
+        job_internal.pop(jid, None)
         job_dir = os.path.join(JOBS_DIR, jid)
         if os.path.exists(job_dir):
             shutil.rmtree(job_dir, ignore_errors=True)

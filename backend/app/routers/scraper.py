@@ -10,6 +10,7 @@ from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult, Revie
 from app.utils.background import (
     create_job, get_job, update_job,
     set_job_internal, get_job_internal, clear_job_internal,
+    set_job_task, get_job_task, clear_job_task,
 )
 from app.services.scraper import (
     scrape_product, fetch_with_httpx, fetch_with_playwright,
@@ -28,14 +29,27 @@ JOBS_DIR = "/tmp/scraper_jobs"
 
 # Limit to 1 concurrent scrape to stay within Render free tier 512MB RAM
 _scrape_semaphore = asyncio.Semaphore(1)
+JOB_TIMEOUT_SECONDS = 300  # 5 minutes max for entire scrape job
 
 async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None):
     try:
         update_job(job_id, progress="Waiting in queue...")
         async with _scrape_semaphore:
-            await _execute_scrape_job(job_id, url, product_model, api_key, ai_model)
+            try:
+                await asyncio.wait_for(
+                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model),
+                    timeout=JOB_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                update_job(job_id, status="failed", error="工作執行超時（超過5分鐘）", progress=None)
+            except asyncio.CancelledError:
+                update_job(job_id, status="failed", error="工作已取消", progress=None)
+    except asyncio.CancelledError:
+        update_job(job_id, status="failed", error="工作已取消", progress=None)
     except Exception as e:
         update_job(job_id, status="failed", error=str(e), progress=None)
+    finally:
+        clear_job_task(job_id)
 
 async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None):
     if api_key:
@@ -304,7 +318,8 @@ async def translate_job(job_id: str, req: TranslateRequest):
 async def submit_scrape(request: ScrapeRequest):
     job_id = str(uuid.uuid4())
     create_job(job_id)
-    asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model))
+    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model))
+    set_job_task(job_id, task)
     return {"job_id": job_id, "status": "processing"}
 
 @router.get("/scrape/{job_id}")
@@ -313,6 +328,27 @@ async def get_scrape_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+@router.post("/scrape/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status in ("completed", "failed"):
+        raise HTTPException(status_code=400, detail="Job already finished")
+
+    task = get_job_task(job_id)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=2.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+
+    update_job(job_id, status="failed", error="工作已取消", progress=None)
+    clear_job_task(job_id)
+    clear_job_internal(job_id)
+    return {"status": "cancelled"}
 
 @router.get("/scrape/{job_id}/download")
 async def download_zip(job_id: str, background_tasks: BackgroundTasks):

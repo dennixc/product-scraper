@@ -62,6 +62,15 @@ export function getDownloadUrl(jobId: string): string {
   return `${API_BASE}/api/scrape/${jobId}/download`;
 }
 
+export async function cancelJob(jobId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/scrape/${jobId}/cancel`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(`取消失敗: ${res.statusText}`);
+  }
+}
+
 export interface TranslateResponse {
   description_html: string;
   description_shopline: string;
