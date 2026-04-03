@@ -114,8 +114,8 @@ async def fetch_with_playwright(url: str) -> str:
 
             # Scroll incrementally to trigger lazy-loaded content
             scroll_start = time.monotonic()
-            max_scrolls = 20
-            max_seconds = 15
+            max_scrolls = 12
+            max_seconds = 10
             prev_height = await page.evaluate("document.body.scrollHeight")
             viewport_h = await page.evaluate("window.innerHeight")
             scroll_pos = 0
