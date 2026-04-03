@@ -4,7 +4,7 @@ import re
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 
-DEFAULT_MODEL = "deepseek/deepseek-v3.2"
+DEFAULT_MODEL = "z-ai/glm-5"
 
 ANALYZE_PROMPT = """你係一個網頁結構分析器。以下係一個產品頁面嘅 HTML 結構摘要。
 

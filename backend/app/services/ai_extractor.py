@@ -32,7 +32,7 @@ EXTRACT_PROMPT = """你係一個產品描述提取器。以下係「{product_nam
 {html}
 """
 
-DEFAULT_MODEL = "deepseek/deepseek-v3.2"
+DEFAULT_MODEL = "z-ai/glm-5"
 
 
 def _build_analysis_hints(analysis: dict | None) -> str:

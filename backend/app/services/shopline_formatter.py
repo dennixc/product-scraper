@@ -99,7 +99,7 @@ font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang TC',
 直接回傳完整嘅 HTML，由 <div> 開始，唔好加任何解釋。
 """
 
-DEFAULT_MODEL = "deepseek/deepseek-v3.2"
+DEFAULT_MODEL = "z-ai/glm-5"
 
 
 async def generate_shopline_html(

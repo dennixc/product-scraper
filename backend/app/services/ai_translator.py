@@ -6,7 +6,7 @@ from openai import AsyncOpenAI
 logger = logging.getLogger(__name__)
 
 MAX_HTML_CHARS = 100_000
-DEFAULT_MODEL = "deepseek/deepseek-v3.2"
+DEFAULT_MODEL = "z-ai/glm-5"
 
 TRANSLATE_PROMPT_ZH_TO_EN = """You are a professional translator. Translate the following HTML content from Traditional Chinese (繁體中文) to English.
 
