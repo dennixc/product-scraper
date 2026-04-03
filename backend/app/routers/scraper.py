@@ -29,19 +29,25 @@ JOBS_DIR = "/tmp/scraper_jobs"
 
 # Limit to 1 concurrent scrape to stay within Render free tier 512MB RAM
 _scrape_semaphore = asyncio.Semaphore(1)
-JOB_TIMEOUT_SECONDS = 480  # 8 minutes — accommodates SPA + multiple AI calls
+_EFFORT_TIMEOUTS = {"high": 900, "medium": 600}  # seconds
+
+def _get_job_timeout(reasoning_effort: str | None) -> tuple[int, int]:
+    """Return (timeout_seconds, timeout_minutes) based on reasoning effort."""
+    timeout = _EFFORT_TIMEOUTS.get(reasoning_effort or "", 480)
+    return timeout, timeout // 60
 
 async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None):
+    timeout_secs, timeout_mins = _get_job_timeout(reasoning_effort)
     try:
         update_job(job_id, progress="Waiting in queue...")
         async with _scrape_semaphore:
             try:
                 await asyncio.wait_for(
                     _execute_scrape_job(job_id, url, product_model, api_key, ai_model, reasoning_effort),
-                    timeout=JOB_TIMEOUT_SECONDS,
+                    timeout=timeout_secs,
                 )
             except asyncio.TimeoutError:
-                update_job(job_id, status="failed", error="工作執行超時（超過8分鐘）", progress=None)
+                update_job(job_id, status="failed", error=f"工作執行超時（超過{timeout_mins}分鐘）", progress=None)
             except asyncio.CancelledError:
                 update_job(job_id, status="failed", error="工作已取消", progress=None)
     except asyncio.CancelledError:
