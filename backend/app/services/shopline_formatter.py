@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from openai import AsyncOpenAI
 
@@ -115,49 +116,52 @@ async def generate_shopline_html(
 
     失敗時 return 空 string（graceful fallback）。
     """
-    try:
-        client = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
-            timeout=90,
-        )
-        extra = {}
-        if reasoning_effort:
-            extra["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
-        response = await client.chat.completions.create(
-            model=model or DEFAULT_MODEL,
-            temperature=0.3,
-            messages=[
-                {
-                    "role": "user",
-                    "content": SHOPLINE_PROMPT.format(
-                        product_name=product_name,
-                        product_model=product_model,
-                        summary=summary,
-                        description_html=_truncate_html(description_html),
-                    ),
-                }
-            ],
-            **extra,
-        )
-        result = response.choices[0].message.content
-        if result:
-            # 去掉可能嘅 markdown code block 包裹
-            result = result.strip()
-            if result.startswith("```html"):
-                result = result[7:]
-            elif result.startswith("```"):
-                result = result[3:]
-            if result.endswith("```"):
-                result = result[:-3]
-            return result.strip()
-        return ""
-    except Exception as e:
-        logger.exception("Shopline HTML generation failed")
-        error_msg = str(e).replace("<", "&lt;").replace(">", "&gt;")
-        return (
-            f'<div style="padding:24px;border:1px solid #e00;border-radius:8px;margin:16px 0">'
-            f'<p style="color:#e00;font-weight:600;margin:0 0 8px 0">Shopline HTML 生成失敗</p>'
-            f'<p style="color:#666;font-size:14px;margin:0">{error_msg}</p>'
-            f'</div>'
-        )
+    client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        timeout=90,
+    )
+    extra = {}
+    if reasoning_effort:
+        extra["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
+    prompt_content = SHOPLINE_PROMPT.format(
+        product_name=product_name,
+        product_model=product_model,
+        summary=summary,
+        description_html=_truncate_html(description_html),
+    )
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = await client.chat.completions.create(
+                model=model or DEFAULT_MODEL,
+                temperature=0.3,
+                messages=[{"role": "user", "content": prompt_content}],
+                **extra,
+            )
+            result = response.choices[0].message.content
+            if result:
+                result = result.strip()
+                if result.startswith("```html"):
+                    result = result[7:]
+                elif result.startswith("```"):
+                    result = result[3:]
+                if result.endswith("```"):
+                    result = result[:-3]
+                return result.strip()
+            return ""
+        except Exception as e:
+            last_error = e
+            logger.warning("Shopline HTML generation attempt %d failed: %s", attempt + 1, e)
+            if attempt < 2:
+                await asyncio.sleep(2)
+
+    logger.exception("Shopline HTML generation failed after 3 attempts", exc_info=last_error)
+    error_msg = str(last_error).replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        f'<div style="padding:24px;border:1px solid #e00;border-radius:8px;margin:16px 0">'
+        f'<p style="color:#e00;font-weight:600;margin:0 0 8px 0">Shopline HTML 生成失敗</p>'
+        f'<p style="color:#666;font-size:14px;margin:0">{error_msg}</p>'
+        f'</div>'
+    )
