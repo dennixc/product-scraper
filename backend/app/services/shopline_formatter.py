@@ -97,6 +97,10 @@ font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang TC',
 - 唔好加入原文冇嘅產品資訊
 - 唔好用 markdown code block 包裹輸出
 
+## 語言
+
+輸出語言必須同「詳細描述 HTML」嘅語言一致。如果描述係英文，所有標題同內文都要用英文。如果係中文，就用中文。唔好混合語言。
+
 直接回傳完整嘅 HTML，由 <div> 開始，唔好加任何解釋。
 """
 
