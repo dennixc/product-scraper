@@ -18,6 +18,7 @@ def create_job(job_id: str) -> ScrapeStatus:
 
 def update_job(job_id: str, **kwargs):
     if job_id in jobs:
+        job_timestamps[job_id] = datetime.now()
         updated = jobs[job_id].model_copy(update=kwargs)
         jobs[job_id] = updated
         return updated

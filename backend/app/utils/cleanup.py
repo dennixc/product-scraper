@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from app.utils.background import jobs, job_timestamps, job_internal, job_tasks
 
 JOBS_DIR = "/tmp/scraper_jobs"
-MAX_AGE_MINUTES = 10
+MAX_AGE_MINUTES = 30
 CLEANUP_INTERVAL_SECONDS = 120  # 2 minutes
 
 async def start_cleanup_task():
@@ -13,9 +13,15 @@ async def start_cleanup_task():
         await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
         cleanup_old_jobs()
 
+def _is_safe_to_clean(jid: str) -> bool:
+    job = jobs.get(jid)
+    if job is None:
+        return True
+    return job.status not in ("processing", "awaiting_review")
+
 def cleanup_old_jobs():
     cutoff = datetime.now() - timedelta(minutes=MAX_AGE_MINUTES)
-    expired = [jid for jid, ts in job_timestamps.items() if ts < cutoff]
+    expired = [jid for jid, ts in job_timestamps.items() if ts < cutoff and _is_safe_to_clean(jid)]
     for jid in expired:
         task = job_tasks.pop(jid, None)
         if task and not task.done():

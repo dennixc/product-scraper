@@ -1,5 +1,13 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+async function extractErrorDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (body.detail) return String(body.detail);
+  } catch { /* not JSON */ }
+  return `${fallback}: ${res.statusText}`;
+}
+
 export interface ProductResult {
   product_name: string;
   product_model: string;
@@ -31,7 +39,7 @@ export async function submitScrapeJob(
     body: JSON.stringify({ url, product_model: productModel || null, api_key: apiKey || null, ai_model: aiModel || null, reasoning_effort: reasoningEffort || null }),
   });
   if (!res.ok) {
-    throw new Error(`Failed to submit scrape job: ${res.statusText}`);
+    throw new Error(await extractErrorDetail(res, "提交失敗"));
   }
   return res.json();
 }
@@ -39,7 +47,7 @@ export async function submitScrapeJob(
 export async function getJobStatus(jobId: string): Promise<ScrapeStatus> {
   const res = await fetch(`${API_BASE}/api/scrape/${jobId}`);
   if (!res.ok) {
-    throw new Error(`Failed to get job status: ${res.statusText}`);
+    throw new Error(await extractErrorDetail(res, "取得狀態失敗"));
   }
   return res.json();
 }
@@ -55,7 +63,7 @@ export async function submitReview(
     body: JSON.stringify({ action, instructions: instructions || "" }),
   });
   if (!res.ok) {
-    throw new Error(`Failed to submit review: ${res.statusText}`);
+    throw new Error(await extractErrorDetail(res, "提交審核失敗"));
   }
 }
 
@@ -68,7 +76,7 @@ export async function cancelJob(jobId: string): Promise<void> {
     method: "POST",
   });
   if (!res.ok) {
-    throw new Error(`取消失敗: ${res.statusText}`);
+    throw new Error(await extractErrorDetail(res, "取消失敗"));
   }
 }
 
@@ -93,7 +101,7 @@ export async function translateResult(
     }),
   });
   if (!res.ok) {
-    throw new Error(`翻譯失敗: ${res.statusText}`);
+    throw new Error(await extractErrorDetail(res, "翻譯失敗"));
   }
   return res.json();
 }

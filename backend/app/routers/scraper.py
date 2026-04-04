@@ -280,7 +280,7 @@ async def _refine_extraction(job_id: str, instructions: str):
 async def submit_review(job_id: str, review: ReviewAction):
     job = get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail="工作已過期或伺服器已重啟，請重新提交網址。")
     if job.status != "awaiting_review":
         raise HTTPException(status_code=400, detail="Job is not awaiting review")
 
@@ -310,7 +310,7 @@ async def submit_review(job_id: str, review: ReviewAction):
 async def translate_job(job_id: str, req: TranslateRequest):
     job = get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail="工作已過期或伺服器已重啟，請重新提交網址。")
     if job.status not in ("completed", "awaiting_review"):
         raise HTTPException(status_code=400, detail="Job is not ready for translation")
     if not job.result:
@@ -339,14 +339,14 @@ async def submit_scrape(request: ScrapeRequest):
 async def get_scrape_status(job_id: str):
     job = get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail="工作已過期或伺服器已重啟，請重新提交網址。")
     return job
 
 @router.post("/scrape/{job_id}/cancel")
 async def cancel_job(job_id: str):
     job = get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail="工作已過期或伺服器已重啟，請重新提交網址。")
     if job.status in ("completed", "failed"):
         raise HTTPException(status_code=400, detail="Job already finished")
 
@@ -367,7 +367,7 @@ async def cancel_job(job_id: str):
 async def download_zip(job_id: str, background_tasks: BackgroundTasks):
     job = get_job(job_id)
     if not job or job.status != "completed":
-        raise HTTPException(status_code=404, detail="Job not found or not completed")
+        raise HTTPException(status_code=404, detail="工作已過期或未完成，請重新提交網址。")
     zip_path = os.path.join(JOBS_DIR, job_id, "result.zip")
     if not os.path.exists(zip_path):
         raise HTTPException(status_code=404, detail="ZIP file not found")
