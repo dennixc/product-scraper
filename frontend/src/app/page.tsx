@@ -86,12 +86,12 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [jobId, pollTrigger, isLoading]);
 
-  const handleConfirm = async () => {
+  const handleConfirm = async (descriptionHtml?: string) => {
     if (!jobId) return;
     setIsLoading(true);
     setError(null);
     try {
-      await submitReview(jobId, "confirm");
+      await submitReview(jobId, "confirm", undefined, descriptionHtml);
       setStatus((prev) => prev ? { ...prev, status: "processing", progress: "正在生成 Shopline HTML..." } : prev);
       setPollTrigger((n) => n + 1);
     } catch (err) {

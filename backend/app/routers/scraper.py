@@ -288,7 +288,7 @@ async def submit_review(job_id: str, review: ReviewAction):
         internal = get_job_internal(job_id)
         asyncio.create_task(_finalize_job(
             job_id,
-            description_html=job.result.description_html if job.result else "",
+            description_html=review.description_html or (job.result.description_html if job.result else ""),
             product_name=job.result.product_name if job.result else "",
             product_model=job.result.product_model if job.result else "product",
             summary=job.result.summary if job.result else "",

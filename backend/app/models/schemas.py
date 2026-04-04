@@ -27,6 +27,7 @@ class ScrapeStatus(BaseModel):
 class ReviewAction(BaseModel):
     action: Literal["confirm", "refine"]
     instructions: str = ""
+    description_html: str | None = None
 
 class TranslateRequest(BaseModel):
     target_language: Literal["en", "zh-TW"]

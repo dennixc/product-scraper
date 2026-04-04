@@ -55,12 +55,13 @@ export async function getJobStatus(jobId: string): Promise<ScrapeStatus> {
 export async function submitReview(
   jobId: string,
   action: "confirm" | "refine",
-  instructions?: string
+  instructions?: string,
+  descriptionHtml?: string
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/scrape/${jobId}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, instructions: instructions || "" }),
+    body: JSON.stringify({ action, instructions: instructions || "", description_html: descriptionHtml || null }),
   });
   if (!res.ok) {
     throw new Error(await extractErrorDetail(res, "提交審核失敗"));

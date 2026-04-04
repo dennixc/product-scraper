@@ -27,7 +27,7 @@ type TranslationState = "original" | "en" | "zh-TW";
 interface ReviewPanelProps {
   result: ProductResult;
   jobId: string;
-  onConfirm: () => void;
+  onConfirm: (descriptionHtml?: string) => void;
   onRefine: (instructions: string) => void;
   isRefining: boolean;
 }
@@ -293,7 +293,7 @@ export function ReviewPanel({ result, jobId, onConfirm, onRefine, isRefining }: 
               {isRefining ? "重新提取中..." : "重新提取"}
             </Button>
             <Button
-              onClick={onConfirm}
+              onClick={() => onConfirm(translationState !== "original" ? displayHtml : undefined)}
               disabled={isRefining}
               className="flex-1"
             >
