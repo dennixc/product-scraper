@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -63,6 +63,18 @@ export function ReviewPanel({ result, jobId, onConfirm, onRefine, isRefining }: 
   const [translatedCache, setTranslatedCache] = useState<Record<string, TranslateResponse>>({});
   const [isTranslating, setIsTranslating] = useState(false);
   const [translateError, setTranslateError] = useState<string | null>(null);
+  const [translateElapsed, setTranslateElapsed] = useState(0);
+  const translateStartRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isTranslating) { translateStartRef.current = null; return; }
+    translateStartRef.current = Date.now();
+    setTranslateElapsed(0);
+    const t = setInterval(() => {
+      if (translateStartRef.current) setTranslateElapsed(Math.floor((Date.now() - translateStartRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [isTranslating]);
 
   const handleTranslate = async (target: TranslationState) => {
     if (target === "original") {
@@ -178,7 +190,7 @@ export function ReviewPanel({ result, jobId, onConfirm, onRefine, isRefining }: 
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  翻譯中...
+                  翻譯中... <span className="tabular-nums">{translateElapsed}s</span>
                 </div>
               )}
               {translateError && (
