@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ScrapeForm } from "@/components/scrape-form";
 import { ResultPreview } from "@/components/result-preview";
 import { ReviewPanel } from "@/components/review-panel";
@@ -19,12 +19,36 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pollTrigger, setPollTrigger] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [finalElapsed, setFinalElapsed] = useState<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+
+  // Elapsed timer — ticks every second while loading
+  useEffect(() => {
+    if (!isLoading) return;
+    startTimeRef.current = Date.now();
+    setElapsed(0);
+    setFinalElapsed(null);
+    const timer = setInterval(() => {
+      if (startTimeRef.current) {
+        setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isLoading]);
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return m > 0 ? `${m}:${sec.toString().padStart(2, "0")}` : `${sec}s`;
+  };
 
   const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string) => {
     setIsLoading(true);
     setError(null);
     setStatus(null);
     setJobId(null);
+    setFinalElapsed(null);
 
     try {
       const response = await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort);
@@ -67,6 +91,9 @@ export default function Home() {
           jobStatus.status === "awaiting_review"
         ) {
           clearInterval(interval);
+          if (startTimeRef.current) {
+            setFinalElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+          }
           setIsLoading(false);
 
           if (jobStatus.status === "failed") {
@@ -164,6 +191,9 @@ export default function Home() {
                 <span className="text-sm font-medium">
                   {status.progress || "處理中..."}
                 </span>
+                <span className="text-sm tabular-nums text-muted-foreground">
+                  {formatTime(elapsed)}
+                </span>
               </div>
               <button
                 onClick={handleCancel}
@@ -179,6 +209,13 @@ export default function Home() {
         {error && (
           <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
             <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
+
+        {/* Elapsed time */}
+        {!isLoading && finalElapsed !== null && (
+          <div className="mb-6 text-sm text-muted-foreground text-right">
+            耗時 {formatTime(finalElapsed)}
           </div>
         )}
 
