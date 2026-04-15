@@ -31,12 +31,13 @@ export async function submitScrapeJob(
   productModel?: string,
   apiKey?: string,
   aiModel?: string,
-  reasoningEffort?: string
+  reasoningEffort?: string,
+  firecrawlApiKey?: string
 ): Promise<{ job_id: string; status: string }> {
   const res = await fetch(`${API_BASE}/api/scrape`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, product_model: productModel || null, api_key: apiKey || null, ai_model: aiModel || null, reasoning_effort: reasoningEffort || null }),
+    body: JSON.stringify({ url, product_model: productModel || null, api_key: apiKey || null, ai_model: aiModel || null, reasoning_effort: reasoningEffort || null, firecrawl_api_key: firecrawlApiKey || null }),
   });
   if (!res.ok) {
     throw new Error(await extractErrorDetail(res, "提交失敗"));

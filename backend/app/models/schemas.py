@@ -7,6 +7,7 @@ class ScrapeRequest(BaseModel):
     api_key: str | None = None
     ai_model: str | None = None
     reasoning_effort: str | None = None
+    firecrawl_api_key: str | None = None
 
 class ProductResult(BaseModel):
     product_name: str

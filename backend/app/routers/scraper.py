@@ -13,7 +13,7 @@ from app.utils.background import (
     set_job_task, get_job_task, clear_job_task,
 )
 from app.services.scraper import (
-    scrape_product, fetch_with_httpx, fetch_with_playwright,
+    scrape_product, fetch_with_httpx, fetch_with_firecrawl, fetch_with_playwright,
     extract_all, detect_spa_heuristic,
 )
 from app.services.packager import create_package
@@ -36,14 +36,14 @@ def _get_job_timeout(reasoning_effort: str | None) -> tuple[int, int]:
     timeout = _EFFORT_TIMEOUTS.get(reasoning_effort or "", 480)
     return timeout, timeout // 60
 
-async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None):
+async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None):
     timeout_secs, timeout_mins = _get_job_timeout(reasoning_effort)
     try:
         update_job(job_id, progress="Waiting in queue...")
         async with _scrape_semaphore:
             try:
                 await asyncio.wait_for(
-                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model, reasoning_effort),
+                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key),
                     timeout=timeout_secs,
                 )
             except asyncio.TimeoutError:
@@ -57,19 +57,33 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
     finally:
         clear_job_task(job_id)
 
-async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None):
+async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None):
     if api_key:
-        await _execute_with_ai(job_id, url, product_model, api_key, ai_model, reasoning_effort)
+        await _execute_with_ai(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key)
     else:
-        await _execute_legacy(job_id, url, product_model)
+        await _execute_legacy(job_id, url, product_model, firecrawl_api_key)
 
 
-async def _execute_legacy(job_id: str, url: str, product_model: str | None):
-    """No API key path — pure rule-based scraping, identical to previous behavior."""
+async def _execute_legacy(job_id: str, url: str, product_model: str | None, firecrawl_api_key: str | None = None):
+    """No API key path — pure rule-based scraping, with optional Firecrawl fetch."""
     try:
-        update_job(job_id, progress="Connecting to page...")
-        raw_data = await scrape_product(url)
-        raw_data.pop("_raw_html", None)
+        raw_data = None
+
+        # Try Firecrawl first if key provided
+        if firecrawl_api_key:
+            update_job(job_id, progress="Firecrawl 正在擷取頁面...")
+            fc_result = await fetch_with_firecrawl(url, firecrawl_api_key)
+            if fc_result:
+                soup = BeautifulSoup(fc_result["html"], 'lxml')
+                raw_data = extract_all(soup, url)
+                raw_data["source_url"] = url
+                del soup
+
+        # Fallback to existing scrape_product()
+        if raw_data is None:
+            update_job(job_id, progress="Connecting to page...")
+            raw_data = await scrape_product(url)
+            raw_data.pop("_raw_html", None)
 
         model = product_model or raw_data.get("product_model", "product")
         result = ProductResult(
@@ -91,45 +105,59 @@ async def _execute_legacy(job_id: str, url: str, product_model: str | None):
         update_job(job_id, status="failed", error=str(e), progress=None)
 
 
-async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api_key: str, ai_model: str | None, reasoning_effort: str | None = None):
+async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api_key: str, ai_model: str | None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None):
     """AI-guided path — uses AI to analyze page structure and choose optimal strategy."""
     try:
-        # Step 1: Lightweight httpx fetch
-        update_job(job_id, progress="Connecting to page...")
-        html = await fetch_with_httpx(url)
-
-        # Step 2: AI structure analysis
-        needs_javascript = False
+        html = None
+        raw_html_for_internal = None
         extraction_strategy = "rule_based"
         analysis = None
+        used_firecrawl = False
 
-        if html:
-            update_job(job_id, progress="AI 正在分析頁面結構...")
-            analysis = await analyze_page_structure(html, url, api_key, ai_model, reasoning_effort=reasoning_effort)
+        # Try Firecrawl first if key provided
+        if firecrawl_api_key:
+            update_job(job_id, progress="Firecrawl 正在擷取頁面...")
+            fc_result = await fetch_with_firecrawl(url, firecrawl_api_key)
+            if fc_result:
+                html = fc_result["html"]
+                raw_html_for_internal = fc_result.get("raw_html") or html
+                used_firecrawl = True
 
-            if analysis:
-                needs_javascript = analysis["needs_javascript"]
-                extraction_strategy = analysis["extraction_strategy"]
-            else:
-                # Step 3: AI analysis failed — fallback to heuristic
-                needs_javascript = detect_spa_heuristic(html)
-        else:
-            # httpx failed entirely — need Playwright
-            needs_javascript = True
+        # Fallback: existing httpx → AI Analyzer → Playwright flow
+        if not used_firecrawl:
+            # Step 1: Lightweight httpx fetch
+            update_job(job_id, progress="Connecting to page...")
+            html = await fetch_with_httpx(url)
 
-        # Step 4: Re-fetch with Playwright if needed
-        if needs_javascript:
+            # Step 2: AI structure analysis
+            needs_javascript = False
+
             if html:
-                del html
-                gc.collect()
-            update_job(job_id, progress="啟動瀏覽器渲染頁面...")
-            html = await fetch_with_playwright(url)
-
-            # If we had no analysis yet (httpx failed), try analyzing Playwright HTML
-            if analysis is None and html:
+                update_job(job_id, progress="AI 正在分析頁面結構...")
                 analysis = await analyze_page_structure(html, url, api_key, ai_model, reasoning_effort=reasoning_effort)
+
                 if analysis:
+                    needs_javascript = analysis["needs_javascript"]
                     extraction_strategy = analysis["extraction_strategy"]
+                else:
+                    needs_javascript = detect_spa_heuristic(html)
+            else:
+                needs_javascript = True
+
+            # Step 3: Re-fetch with Playwright if needed
+            if needs_javascript:
+                if html:
+                    del html
+                    gc.collect()
+                update_job(job_id, progress="啟動瀏覽器渲染頁面...")
+                html = await fetch_with_playwright(url)
+
+                if analysis is None and html:
+                    analysis = await analyze_page_structure(html, url, api_key, ai_model, reasoning_effort=reasoning_effort)
+                    if analysis:
+                        extraction_strategy = analysis["extraction_strategy"]
+
+            raw_html_for_internal = html
 
         # Step 5: Always run rule-based extraction for name/model/summary
         soup = BeautifulSoup(html, 'lxml')
@@ -175,7 +203,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
 
         # Step 8: Pause for user review — store context for refine/finalize
         set_job_internal(job_id,
-            raw_html=html,
+            raw_html=raw_html_for_internal,
             api_key=api_key,
             ai_model=ai_model,
             reasoning_effort=reasoning_effort,
@@ -183,7 +211,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
             product_name=raw_data.get("product_name", ""),
             product_model=model,
         )
-        del html
+        del html, raw_html_for_internal
         gc.collect()
 
         review_result = ProductResult(
@@ -331,7 +359,7 @@ async def translate_job(job_id: str, req: TranslateRequest):
 async def submit_scrape(request: ScrapeRequest):
     job_id = str(uuid.uuid4())
     create_job(job_id)
-    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model, request.reasoning_effort))
+    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model, request.reasoning_effort, request.firecrawl_api_key))
     set_job_task(job_id, task)
     return {"job_id": job_id, "status": "processing"}
 

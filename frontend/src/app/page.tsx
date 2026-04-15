@@ -43,7 +43,7 @@ export default function Home() {
     return m > 0 ? `${m}:${sec.toString().padStart(2, "0")}` : `${sec}s`;
   };
 
-  const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string) => {
+  const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string) => {
     setIsLoading(true);
     setError(null);
     setStatus(null);
@@ -51,7 +51,7 @@ export default function Home() {
     setFinalElapsed(null);
 
     try {
-      const response = await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort);
+      const response = await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort, firecrawlApiKey);
       setJobId(response.job_id);
       setPollTrigger((n) => n + 1);
     } catch (err) {

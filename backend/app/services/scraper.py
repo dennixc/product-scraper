@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import gc
 import re
@@ -80,6 +81,43 @@ async def fetch_with_httpx(url: str) -> str | None:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.text
+    except Exception:
+        return None
+
+
+async def fetch_with_firecrawl(url: str, api_key: str) -> dict | None:
+    """Fetch page via Firecrawl API — handles JS rendering, anti-bot, and content cleaning."""
+    try:
+        from firecrawl import FirecrawlApp
+        app = FirecrawlApp(api_key=api_key)
+        result = await asyncio.to_thread(
+            app.scrape_url,
+            url,
+            params={
+                "formats": ["html", "rawHtml"],
+                "onlyMainContent": True,
+                "timeout": 60000,
+            },
+        )
+        if not result:
+            return None
+
+        cleaned_html = result.get("html", "")
+        raw_html = result.get("rawHtml", "")
+        metadata = result.get("metadata", {})
+
+        # Check content is substantive
+        if not cleaned_html and not raw_html:
+            return None
+        text_len = len(re.sub(r'<[^>]+>', '', cleaned_html or raw_html))
+        if text_len < 200:
+            return None
+
+        return {
+            "html": cleaned_html or raw_html,
+            "raw_html": raw_html or cleaned_html,
+            "metadata": metadata,
+        }
     except Exception:
         return None
 

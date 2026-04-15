@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+const FIRECRAWL_KEY_STORAGE_KEY = "firecrawl_api_key";
 const API_KEY_STORAGE_KEY = "openrouter_api_key";
 const AI_MODEL_STORAGE_KEY = "openrouter_ai_model";
 const REASONING_EFFORT_STORAGE_KEY = "openrouter_reasoning_effort";
@@ -30,19 +31,23 @@ const AI_MODELS = [
 ];
 
 interface ScrapeFormProps {
-  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string) => void;
+  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string) => void;
   isLoading: boolean;
 }
 
 export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
   const [url, setUrl] = useState("");
   const [productModel, setProductModel] = useState("");
+  const [firecrawlApiKey, setFirecrawlApiKey] = useState("");
+  const [showFirecrawl, setShowFirecrawl] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [aiModel, setAiModel] = useState(AI_MODELS[0].value);
   const [reasoningEffort, setReasoningEffort] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
+    const savedFcKey = localStorage.getItem(FIRECRAWL_KEY_STORAGE_KEY);
+    if (savedFcKey) setFirecrawlApiKey(savedFcKey);
     const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
     if (savedKey) setApiKey(savedKey);
     const savedModel = localStorage.getItem(AI_MODEL_STORAGE_KEY);
@@ -57,6 +62,15 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
       setReasoningEffort(savedEffort);
     }
   }, []);
+
+  const handleFirecrawlKeyChange = (value: string) => {
+    setFirecrawlApiKey(value);
+    if (value) {
+      localStorage.setItem(FIRECRAWL_KEY_STORAGE_KEY, value);
+    } else {
+      localStorage.removeItem(FIRECRAWL_KEY_STORAGE_KEY);
+    }
+  };
 
   const handleApiKeyChange = (value: string) => {
     setApiKey(value);
@@ -90,6 +104,7 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
       apiKey.trim() || undefined,
       apiKey.trim() ? aiModel : undefined,
       apiKey.trim() && reasoningEffort ? reasoningEffort : undefined,
+      firecrawlApiKey.trim() || undefined,
     );
   };
 
@@ -132,6 +147,39 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
             <p className="text-xs text-muted-foreground">
               Override auto-detected model number for file naming.
             </p>
+          </div>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowFirecrawl(!showFirecrawl)}
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              <svg
+                className={`h-3 w-3 transition-transform ${showFirecrawl ? "rotate-90" : ""}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              Firecrawl (optional)
+            </button>
+            {showFirecrawl && (
+              <div className="space-y-2 pl-4 border-l-2 border-muted">
+                <Input
+                  id="firecrawlApiKey"
+                  type="password"
+                  placeholder="Firecrawl API Key"
+                  value={firecrawlApiKey}
+                  onChange={(e) => handleFirecrawlKeyChange(e.target.value)}
+                  disabled={isLoading}
+                />
+                <p className="text-xs text-muted-foreground">
+                  提供 Firecrawl API Key 可改善擷取穩定性，繞過反爬蟲限制。Key 會儲存喺瀏覽器。
+                </p>
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <button
