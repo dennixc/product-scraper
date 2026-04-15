@@ -90,21 +90,19 @@ async def fetch_with_firecrawl(url: str, api_key: str) -> dict | None:
     try:
         from firecrawl import FirecrawlApp
         app = FirecrawlApp(api_key=api_key)
-        result = await asyncio.to_thread(
-            app.scrape_url,
-            url,
-            params={
-                "formats": ["html", "rawHtml"],
-                "onlyMainContent": True,
-                "timeout": 60000,
-            },
+        doc = await asyncio.to_thread(
+            lambda: app.scrape(
+                url,
+                formats=["html", "rawHtml"],
+                only_main_content=True,
+                timeout=60000,
+            ),
         )
-        if not result:
+        if not doc:
             return None
 
-        cleaned_html = result.get("html", "")
-        raw_html = result.get("rawHtml", "")
-        metadata = result.get("metadata", {})
+        cleaned_html = doc.html or ""
+        raw_html = doc.raw_html or ""
 
         # Check content is substantive
         if not cleaned_html and not raw_html:
@@ -116,7 +114,7 @@ async def fetch_with_firecrawl(url: str, api_key: str) -> dict | None:
         return {
             "html": cleaned_html or raw_html,
             "raw_html": raw_html or cleaned_html,
-            "metadata": metadata,
+            "metadata": {},
         }
     except Exception:
         return None
