@@ -10,6 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { BrandManager, getSelectedProfile } from "@/components/brand-manager";
+import type { BrandProfileData } from "@/lib/api";
 
 const FIRECRAWL_KEY_STORAGE_KEY = "firecrawl_api_key";
 const API_KEY_STORAGE_KEY = "openrouter_api_key";
@@ -31,7 +33,7 @@ const AI_MODELS = [
 ];
 
 interface ScrapeFormProps {
-  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string) => void;
+  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string, brandProfile?: BrandProfileData) => void;
   isLoading: boolean;
 }
 
@@ -44,8 +46,11 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
   const [aiModel, setAiModel] = useState(AI_MODELS[0].value);
   const [reasoningEffort, setReasoningEffort] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
+  const [selectedBrandId, setSelectedBrandId] = useState("");
 
   useEffect(() => {
+    const savedBrand = localStorage.getItem("selected_brand_id");
+    if (savedBrand) setSelectedBrandId(savedBrand);
     const savedFcKey = localStorage.getItem(FIRECRAWL_KEY_STORAGE_KEY);
     if (savedFcKey) setFirecrawlApiKey(savedFcKey);
     const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
@@ -98,6 +103,7 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
+    const brandProfile = selectedBrandId ? getSelectedProfile() : undefined;
     onSubmit(
       url.trim(),
       productModel.trim() || undefined,
@@ -105,6 +111,7 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
       apiKey.trim() ? aiModel : undefined,
       apiKey.trim() && reasoningEffort ? reasoningEffort : undefined,
       firecrawlApiKey.trim() || undefined,
+      brandProfile || undefined,
     );
   };
 
@@ -118,6 +125,13 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <BrandManager
+            apiKey={apiKey}
+            aiModel={aiModel}
+            firecrawlApiKey={firecrawlApiKey || undefined}
+            selectedBrandId={selectedBrandId}
+            onBrandChange={setSelectedBrandId}
+          />
           <div className="space-y-2">
             <label htmlFor="url" className="text-sm font-medium">
               Product URL

@@ -26,18 +26,72 @@ export interface ScrapeStatus {
   error: string | null;
 }
 
+export interface BrandProfileData {
+  needs_javascript: boolean;
+  extraction_strategy: string;
+  content_selectors: string[];
+  noise_selectors: string[];
+  content_structure: string;
+  content_language: string;
+}
+
+export interface StoredBrandProfile extends BrandProfileData {
+  id: string;
+  name: string;
+  created_at: string;
+  sample_urls: string[];
+  urls_analyzed: number;
+  urls_failed: number;
+}
+
+export interface BrandLearnResponse extends BrandProfileData {
+  urls_analyzed: number;
+  urls_failed: number;
+}
+
+export async function learnBrand(
+  urls: string[],
+  apiKey: string,
+  aiModel?: string,
+  firecrawlApiKey?: string
+): Promise<BrandLearnResponse> {
+  const res = await fetch(`${API_BASE}/api/brands/learn`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      urls,
+      api_key: apiKey,
+      ai_model: aiModel || null,
+      firecrawl_api_key: firecrawlApiKey || null,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res, "品牌學習失敗"));
+  }
+  return res.json();
+}
+
 export async function submitScrapeJob(
   url: string,
   productModel?: string,
   apiKey?: string,
   aiModel?: string,
   reasoningEffort?: string,
-  firecrawlApiKey?: string
+  firecrawlApiKey?: string,
+  brandProfile?: BrandProfileData
 ): Promise<{ job_id: string; status: string }> {
   const res = await fetch(`${API_BASE}/api/scrape`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, product_model: productModel || null, api_key: apiKey || null, ai_model: aiModel || null, reasoning_effort: reasoningEffort || null, firecrawl_api_key: firecrawlApiKey || null }),
+    body: JSON.stringify({
+      url,
+      product_model: productModel || null,
+      api_key: apiKey || null,
+      ai_model: aiModel || null,
+      reasoning_effort: reasoningEffort || null,
+      firecrawl_api_key: firecrawlApiKey || null,
+      brand_profile: brandProfile || null,
+    }),
   });
   if (!res.ok) {
     throw new Error(await extractErrorDetail(res, "提交失敗"));

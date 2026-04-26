@@ -11,6 +11,7 @@ import {
   submitReview,
   cancelJob,
   type ScrapeStatus,
+  type BrandProfileData,
 } from "@/lib/api";
 
 export default function Home() {
@@ -43,7 +44,7 @@ export default function Home() {
     return m > 0 ? `${m}:${sec.toString().padStart(2, "0")}` : `${sec}s`;
   };
 
-  const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string) => {
+  const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string, brandProfile?: BrandProfileData) => {
     setIsLoading(true);
     setError(null);
     setStatus(null);
@@ -51,7 +52,7 @@ export default function Home() {
     setFinalElapsed(null);
 
     try {
-      const response = await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort, firecrawlApiKey);
+      const response = await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort, firecrawlApiKey, brandProfile);
       setJobId(response.job_id);
       setPollTrigger((n) => n + 1);
     } catch (err) {

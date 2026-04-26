@@ -58,6 +58,19 @@ REMOVE_SELECTORS = [
     '[id*="cookie"]', '[id*="consent"]', '[id*="breadcrumb"]',
     '[id*="sidebar"]', '[id*="newsletter"]',
     'script', 'style', 'noscript', 'iframe',
+    # Product comparison / recommendations
+    '[class*="recommend"]', '[class*="Recommend"]',
+    '[class*="RelatedProducts"]', '[class*="related-product"]',
+    '[class*="accessories"]', '[class*="Accessories"]',
+    # Disclaimers / footnotes
+    '[class*="disclaimer"]', '[class*="Disclaimer"]',
+    '[class*="highlights-note"]',
+    # Spec tables (separate from descriptions)
+    '#div_specifications',
+    # Support sections
+    '.m-support',
+    # Shopify comparison widgets
+    '.compare-products',
 ]
 
 
@@ -65,7 +78,21 @@ _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 
 
 def detect_spa_heuristic(html: str) -> bool:
-    """Original SPA detection heuristic — used as fallback when AI analysis fails."""
+    """SPA detection heuristic — used as fallback when AI analysis fails.
+
+    Nuxt/Next SSR pages contain framework markers but already have
+    server-rendered content, so they do NOT need Playwright.
+    """
+    # Nuxt SSR: has __NUXT__ but content is server-rendered
+    if '__NUXT__' in html and 'data-server-rendered="true"' in html:
+        return False
+    # Next.js SSR: has __NEXT_DATA__ but body already has substantial content
+    if '__NEXT_DATA__' in html:
+        body_match = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL)
+        if body_match:
+            body_text = re.sub(r'<[^>]+>', '', body_match.group(1))
+            if len(body_text.strip()) > 500:
+                return False
     return '__NUXT__' in html or '__NEXT_DATA__' in html
 
 
@@ -276,7 +303,14 @@ def _extract_model(soup: BeautifulSoup, product_name: str, url: str) -> str:
         except (json.JSONDecodeError, TypeError, IndexError):
             continue
 
-    # 2. Page elements with SKU/model class or id
+    # 2. Data-attribute based product name (e.g. TP-Link #ga-product-name)
+    ga_el = soup.find(id="ga-product-name")
+    if ga_el:
+        data_name = ga_el.get("data-name", "").strip()
+        if data_name and len(data_name) >= 3:
+            return data_name
+
+    # 3. Page elements with SKU/model class or id
     sku_class_patterns = [
         'sku', 'model-number', 'model_number', 'modelNumber',
         'product-model', 'mpn', 'part-number', 'partNumber',

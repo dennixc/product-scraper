@@ -6,7 +6,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from bs4 import BeautifulSoup
-from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction, TranslateRequest, TranslateResponse
+from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction, TranslateRequest, TranslateResponse, BrandLearnRequest, BrandLearnResponse
 from app.utils.background import (
     create_job, get_job, update_job,
     set_job_internal, get_job_internal, clear_job_internal,
@@ -22,6 +22,7 @@ from app.services.ai_cleaner import clean_description_with_ai
 from app.services.ai_extractor import extract_description_with_ai
 from app.services.shopline_formatter import generate_shopline_html
 from app.services.ai_translator import translate_html
+from app.services.brand_learner import learn_brand_profile
 
 router = APIRouter(prefix="/api")
 
@@ -36,14 +37,14 @@ def _get_job_timeout(reasoning_effort: str | None) -> tuple[int, int]:
     timeout = _EFFORT_TIMEOUTS.get(reasoning_effort or "", 480)
     return timeout, timeout // 60
 
-async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None):
+async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None):
     timeout_secs, timeout_mins = _get_job_timeout(reasoning_effort)
     try:
         update_job(job_id, progress="Waiting in queue...")
         async with _scrape_semaphore:
             try:
                 await asyncio.wait_for(
-                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key),
+                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key, brand_profile),
                     timeout=timeout_secs,
                 )
             except asyncio.TimeoutError:
@@ -57,9 +58,9 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
     finally:
         clear_job_task(job_id)
 
-async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None):
+async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None):
     if api_key:
-        await _execute_with_ai(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key)
+        await _execute_with_ai(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key, brand_profile)
     else:
         await _execute_legacy(job_id, url, product_model, firecrawl_api_key)
 
@@ -105,7 +106,7 @@ async def _execute_legacy(job_id: str, url: str, product_model: str | None, fire
         update_job(job_id, status="failed", error=str(e), progress=None)
 
 
-async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api_key: str, ai_model: str | None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None):
+async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api_key: str, ai_model: str | None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None):
     """AI-guided path — uses AI to analyze page structure and choose optimal strategy."""
     try:
         html = None
@@ -113,6 +114,11 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
         extraction_strategy = "rule_based"
         analysis = None
         used_firecrawl = False
+
+        # If brand profile provided, use it as pre-computed analysis
+        if brand_profile:
+            analysis = brand_profile
+            extraction_strategy = brand_profile.get("extraction_strategy", "rule_based")
 
         # Try Firecrawl first if key provided
         if firecrawl_api_key:
@@ -129,20 +135,21 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
             update_job(job_id, progress="Connecting to page...")
             html = await fetch_with_httpx(url)
 
-            # Step 2: AI structure analysis
-            needs_javascript = False
+            # Step 2: AI structure analysis (skip if brand profile provided)
+            needs_javascript = brand_profile.get("needs_javascript", False) if brand_profile else False
 
-            if html:
-                update_job(job_id, progress="AI 正在分析頁面結構...")
-                analysis = await analyze_page_structure(html, url, api_key, ai_model, reasoning_effort=reasoning_effort)
+            if not brand_profile:
+                if html:
+                    update_job(job_id, progress="AI 正在分析頁面結構...")
+                    analysis = await analyze_page_structure(html, url, api_key, ai_model, reasoning_effort=reasoning_effort)
 
-                if analysis:
-                    needs_javascript = analysis["needs_javascript"]
-                    extraction_strategy = analysis["extraction_strategy"]
+                    if analysis:
+                        needs_javascript = analysis["needs_javascript"]
+                        extraction_strategy = analysis["extraction_strategy"]
+                    else:
+                        needs_javascript = detect_spa_heuristic(html)
                 else:
-                    needs_javascript = detect_spa_heuristic(html)
-            else:
-                needs_javascript = True
+                    needs_javascript = True
 
             # Step 3: Re-fetch with Playwright if needed
             if needs_javascript:
@@ -355,11 +362,30 @@ async def translate_job(job_id: str, req: TranslateRequest):
     )
 
 
+@router.post("/brands/learn")
+async def learn_brand(request: BrandLearnRequest):
+    urls = [str(u) for u in request.urls]
+    if len(urls) < 1:
+        raise HTTPException(status_code=400, detail="至少需要 1 條 URL")
+    if len(urls) > 10:
+        raise HTTPException(status_code=400, detail="最多 10 條 URL")
+    try:
+        profile = await learn_brand_profile(
+            urls, request.api_key, request.ai_model, request.firecrawl_api_key,
+        )
+        return BrandLearnResponse(**profile)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"品牌學習失敗：{e}")
+
+
 @router.post("/scrape")
 async def submit_scrape(request: ScrapeRequest):
     job_id = str(uuid.uuid4())
     create_job(job_id)
-    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model, request.reasoning_effort, request.firecrawl_api_key))
+    bp = request.brand_profile.model_dump() if request.brand_profile else None
+    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model, request.reasoning_effort, request.firecrawl_api_key, bp))
     set_job_task(job_id, task)
     return {"job_id": job_id, "status": "processing"}
 

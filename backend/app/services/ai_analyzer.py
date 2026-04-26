@@ -70,16 +70,16 @@ def _prepare_structural_sample(raw_html: str) -> str:
                 head_html = head_html[:last_close + 1]
         parts.append(f"=== HEAD (truncated) ===\n{head_html}")
 
-    # Body excerpt (~10KB) — remove script/style/svg content
+    # Body excerpt (~20KB) — remove script/style/svg content
     body = soup.find('body')
     if body:
         for tag in body.find_all(['script', 'style', 'svg', 'noscript']):
             tag.decompose()
         body_html = str(body)
-        if len(body_html) > 10000:
-            body_html = body_html[:10000]
+        if len(body_html) > 20000:
+            body_html = body_html[:20000]
             last_close = body_html.rfind('>')
-            if last_close > 8000:
+            if last_close > 16000:
                 body_html = body_html[:last_close + 1]
         parts.append(f"=== BODY (truncated, scripts/styles removed) ===\n{body_html}")
 

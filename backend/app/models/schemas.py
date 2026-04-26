@@ -1,6 +1,16 @@
 from pydantic import BaseModel, HttpUrl
 from typing import Literal
 
+
+class BrandProfile(BaseModel):
+    needs_javascript: bool = False
+    extraction_strategy: str = "rule_based"
+    content_selectors: list[str] = []
+    noise_selectors: list[str] = []
+    content_structure: str = "mixed"
+    content_language: str = ""
+
+
 class ScrapeRequest(BaseModel):
     url: HttpUrl
     product_model: str | None = None
@@ -8,6 +18,7 @@ class ScrapeRequest(BaseModel):
     ai_model: str | None = None
     reasoning_effort: str | None = None
     firecrawl_api_key: str | None = None
+    brand_profile: BrandProfile | None = None
 
 class ProductResult(BaseModel):
     product_name: str
@@ -38,3 +49,21 @@ class TranslateRequest(BaseModel):
 class TranslateResponse(BaseModel):
     description_html: str
     description_shopline: str
+
+
+class BrandLearnRequest(BaseModel):
+    urls: list[HttpUrl]
+    api_key: str
+    ai_model: str | None = None
+    firecrawl_api_key: str | None = None
+
+
+class BrandLearnResponse(BaseModel):
+    needs_javascript: bool
+    extraction_strategy: str
+    content_selectors: list[str]
+    noise_selectors: list[str]
+    content_structure: str
+    content_language: str
+    urls_analyzed: int
+    urls_failed: int
