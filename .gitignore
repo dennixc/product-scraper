@@ -19,5 +19,14 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Build artifacts
+*.tsbuildinfo
+
+# Playwright MCP debug output
+.playwright-mcp/
+
+# Ad hoc screenshots
+*.png
+
 # Claude Code
 .claude/
