@@ -16,6 +16,47 @@ import {
 import type { ProductResult } from "@/lib/api";
 import { translateResult, type TranslateResponse } from "@/lib/api";
 
+const INLINE_STYLES: Record<string, string> = {
+  h2: "font-size: 32px; font-weight: 700; line-height: 1.2; color: #1d1d1f; margin: 48px 0 0 0;",
+  h3: "font-size: 22px; font-weight: 700; line-height: 1.3; color: #1d1d1f; margin: 16px 0 0 0;",
+  h4: "font-size: 18px; font-weight: 700; line-height: 1.3; color: #1d1d1f; margin: 16px 0 0 0;",
+  p: "font-size: 15px; font-weight: 400; line-height: 1.7; color: #1d1d1f; margin: 12px 0 0 0;",
+  ul: "margin: 12px 0 0 0; padding-left: 20px;",
+  ol: "margin: 12px 0 0 0; padding-left: 20px;",
+  li: "font-size: 15px; line-height: 1.7; color: #1d1d1f; margin: 6px 0 0 0;",
+};
+
+const HR_STYLE = "margin: 48px 0; border: none; border-top: 1px solid #d2d2d7;";
+const CONTAINER_STYLE = "max-width: 720px; margin: 0 auto; padding: 0 20px; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang TC', 'Noto Sans TC', sans-serif;";
+
+function applyInlineStyles(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  let isFirstH2 = true;
+
+  for (const el of doc.body.querySelectorAll("h2, h3, h4, p, ul, ol, li")) {
+    const tag = el.tagName.toLowerCase();
+    const style = INLINE_STYLES[tag];
+    if (!style) continue;
+
+    if (tag === "h2") {
+      if (isFirstH2) {
+        el.setAttribute("style", style.replace("margin: 48px", "margin: 0"));
+        isFirstH2 = false;
+      } else {
+        // Insert hr before non-first h2
+        const hr = doc.createElement("hr");
+        hr.setAttribute("style", HR_STYLE);
+        el.parentNode?.insertBefore(hr, el);
+        el.setAttribute("style", style);
+      }
+    } else {
+      el.setAttribute("style", style);
+    }
+  }
+
+  return `<div style="${CONTAINER_STYLE}">\n${doc.body.innerHTML}\n</div>`;
+}
+
 function htmlToText(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const blocks = doc.body.querySelectorAll("p, h2, h3, h4, li, tr, td");
@@ -36,7 +77,7 @@ interface ResultPreviewProps {
 }
 
 export function ResultPreview({ result, downloadUrl, jobId }: ResultPreviewProps) {
-  const [htmlView, setHtmlView] = useState<"preview" | "text" | "source">("preview");
+  const [htmlView, setHtmlView] = useState<"preview" | "text" | "source" | "styled">("preview");
   const [shoplineView, setShoplineView] = useState<"preview" | "text" | "source">("preview");
   const [htmlCopied, setHtmlCopied] = useState(false);
   const [shoplineCopied, setShoplineCopied] = useState(false);
@@ -344,13 +385,23 @@ export function ResultPreview({ result, downloadUrl, jobId }: ResultPreviewProps
                       </button>
                       <button
                         onClick={() => setHtmlView("source")}
-                        className={`px-3 py-1 text-xs font-medium rounded-r-md transition-colors ${
+                        className={`px-3 py-1 text-xs font-medium border-r transition-colors ${
                           htmlView === "source"
                             ? "bg-primary text-primary-foreground"
                             : "hover:bg-muted"
                         }`}
                       >
                         原始碼
+                      </button>
+                      <button
+                        onClick={() => setHtmlView("styled")}
+                        className={`px-3 py-1 text-xs font-medium rounded-r-md transition-colors ${
+                          htmlView === "styled"
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-muted"
+                        }`}
+                      >
+                        Shopline 格式
                       </button>
                     </div>
                     <Button
@@ -360,7 +411,9 @@ export function ResultPreview({ result, downloadUrl, jobId }: ResultPreviewProps
                         copyToClipboard(
                           htmlView === "text"
                             ? htmlToText(displayHtml)
-                            : displayHtml,
+                            : htmlView === "styled"
+                              ? applyInlineStyles(displayHtml)
+                              : displayHtml,
                           "html"
                         )
                       }
@@ -386,6 +439,10 @@ export function ResultPreview({ result, downloadUrl, jobId }: ResultPreviewProps
                   <div className="text-sm whitespace-pre-wrap p-4 bg-muted rounded-md max-h-96 overflow-y-auto">
                     {htmlToText(displayHtml)}
                   </div>
+                ) : htmlView === "styled" ? (
+                  <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
+                    {applyInlineStyles(displayHtml)}
+                  </pre>
                 ) : (
                   <pre className="text-xs bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
                     {displayHtml}
