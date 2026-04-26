@@ -18,7 +18,7 @@ def _truncate_html(html: str) -> str:
     return truncated
 
 
-SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。將產品資料轉換為簡約、高可讀性嘅 HTML，可以直接貼入 Shopline 商品描述編輯器。
+SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。將產品資料轉換為專業簡潔、高可讀性嘅 HTML，可以直接貼入 Shopline 商品描述編輯器。
 
 ## 產品資料
 
@@ -42,46 +42,39 @@ font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang TC',
 ### 色彩（只用呢四個）
 - 主文字：color: #1d1d1f
 - 次要文字：color: #6e6e73
-- 分隔線：border-color: #e0e0e0
+- 分隔線：border-color: #d2d2d7
 - 背景：永遠係白色，唔好用任何背景色
 
 ### 字體大小（固定）
-- 產品名：font-size: 28px; font-weight: 700; line-height: 1.2; color: #1d1d1f
-- 型號／標籤：font-size: 14px; font-weight: 400; color: #6e6e73
-- 摘要：font-size: 16px; line-height: 1.6; color: #6e6e73
-- Section 標題：font-size: 20px; font-weight: 700; line-height: 1.3; color: #1d1d1f
-- 內文：font-size: 16px; font-weight: 400; line-height: 1.6; color: #1d1d1f
-- 規格標籤：font-size: 14px; color: #6e6e73
-- 規格內容：font-size: 14px; color: #1d1d1f
+- 產品名：font-size: 32px; font-weight: 700; line-height: 1.2; color: #1d1d1f
+- 型號／標籤：font-size: 14px; font-weight: 400; color: #6e6e73; letter-spacing: 0.5px
+- 摘要：font-size: 15px; line-height: 1.7; color: #6e6e73
+- Section 標題：font-size: 22px; font-weight: 700; line-height: 1.3; color: #1d1d1f
+- 內文：font-size: 15px; font-weight: 400; line-height: 1.7; color: #1d1d1f
 
 ### 間距（固定，唔好自己調）
-- 最外層容器：max-width: 780px; margin: 0 auto; padding: 0 16px
-- Section 之間：margin-top: 32px
-- 標題同內文之間：margin-top: 12px
-- 段落之間：margin-top: 10px
-- 分隔線：margin: 32px 0; border: none; border-top: 1px solid #e0e0e0
+- 最外層容器：max-width: 720px; margin: 0 auto; padding: 0 20px
+- Section 之間：margin-top: 48px
+- 標題同內文之間：margin-top: 16px
+- 段落之間：margin-top: 12px
+- 分隔線：margin: 48px 0; border: none; border-top: 1px solid #d2d2d7
 
 ## 頁面結構（嚴格按以下順序）
 
 ### 第一區：產品標題
-- 產品名稱（h2，28px 粗體）
-- 型號顯示喺產品名下面（14px，次要色）
-- 一句摘要（16px，次要色，margin-top: 8px）
+- 產品名稱（h2，32px 粗體）
+- 型號顯示喺產品名下面（14px，次要色，letter-spacing: 0.5px）
+- 一句摘要（15px，次要色，margin-top: 12px）
 - 底部一條 hr 分隔線
 
 ### 第二區：產品特點（主要內容）
 - 將產品嘅主要特點拆分成獨立段落
-- 每個特點：一個 h3（20px 粗體）+ 一至兩段 p（16px）
+- 每個特點：一個 h3（22px 粗體）+ 一至兩段 p（15px）
 - 特點之間用 hr 分隔線分開
 - 文字左對齊（唔好置中）
 - 如果原文有列表形式嘅內容，用 ul > li 呈現
-
-### 第三區：規格（如有）
-- 標題用 h3（20px 粗體），寫「規格」或英文 "Specifications"（跟原文語言）
-- 用 ul > li 列出每項規格
-- 每個 li 入面：用 strong 標籤包住規格名稱，後面跟數值
-- 例如：<li style="..."><strong>重量：</strong>1.2 kg</li>
-- 如果規格有多個分類，每組用 h3 做小標題
+- ul 嘅 style：margin-top: 12px; padding-left: 20px
+- li 嘅 style：font-size: 15px; line-height: 1.7; color: #1d1d1f; margin-top: 6px
 
 ## 禁止事項
 
@@ -95,6 +88,7 @@ font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang TC',
 - 唔好用 <img> 標籤
 - 唔好用 text-align: center
 - 唔好加入原文冇嘅產品資訊
+- 唔好加入規格表／配置表／spec table（呢啲會另外處理）
 - 唔好用 markdown code block 包裹輸出
 
 ## 語言

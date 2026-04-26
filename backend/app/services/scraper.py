@@ -17,7 +17,6 @@ MODEL_PATTERN = re.compile(r'(?<![/\w])[A-Z]{1,6}[-\s]?[A-Z0-9]*\d[A-Z0-9]*(?:[-
 ALLOWED_TAGS = {
     'h2', 'h3', 'h4', 'p', 'ul', 'ol', 'li',
     'strong', 'em', 'b', 'i', 'br',
-    'table', 'thead', 'tbody', 'tr', 'td', 'th',
 }
 
 # Boilerplate / disclaimer patterns — if element text matches any, skip it
@@ -553,7 +552,7 @@ def _extract_description_html(soup: BeautifulSoup, analysis: dict | None = None)
     seen_texts = set()
 
     # Phase 1: Standard semantic elements (h2-h4, p, ul, ol, table)
-    for el in main.find_all(['h2', 'h3', 'h4', 'p', 'ul', 'ol', 'table']):
+    for el in main.find_all(['h2', 'h3', 'h4', 'p', 'ul', 'ol']):
         _maybe_add_element(el, seen_texts, content_parts)
 
     # Phase 2: Content containers — div/section/span without nested container divs
