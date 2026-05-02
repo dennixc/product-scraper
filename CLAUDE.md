@@ -47,7 +47,9 @@ npm run dev
 ```
 
 ### Environment Variables
-- **Backend**: `CORS_ORIGINS` (comma-separated allowed origins, default: `http://localhost:3000`)
+- **Backend**:
+  - `CORS_ORIGINS` (comma-separated allowed origins, default: `http://localhost:3000`)
+  - `BRANDS_PATH` (品牌 profile JSON 檔案路徑，default: `data/brands.json`，Render 用 persistent disk 設 `/var/data/brands.json`)
 - **Frontend**: `NEXT_PUBLIC_API_URL` (backend URL, default: `http://localhost:8000`)
 
 ## Deployment

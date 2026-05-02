@@ -29,12 +29,35 @@ class ProductResult(BaseModel):
     description_shopline: str = ""
     source_url: str
 
+class CompareEngineResult(BaseModel):
+    product_name: str = ""
+    product_model: str = ""
+    summary: str = ""
+    description: str = ""
+    description_html: str = ""
+    elapsed_ms: int = 0
+    error: str | None = None
+
+
+class CompareResult(BaseModel):
+    firecrawl: CompareEngineResult | None = None
+    playwright: CompareEngineResult | None = None
+    source_url: str
+
+
+class CompareRequest(BaseModel):
+    url: HttpUrl
+    firecrawl_api_key: str | None = None
+
+
 class ScrapeStatus(BaseModel):
     job_id: str
     status: Literal["processing", "awaiting_review", "completed", "failed"]
     progress: str | None = None
     result: ProductResult | None = None
     error: str | None = None
+    compare_result: CompareResult | None = None
+    mode: Literal["normal", "compare"] = "normal"
 
 class ReviewAction(BaseModel):
     action: Literal["confirm", "refine"]
@@ -67,3 +90,12 @@ class BrandLearnResponse(BaseModel):
     content_language: str
     urls_analyzed: int
     urls_failed: int
+
+
+class StoredBrandProfile(BrandProfile):
+    id: str
+    name: str
+    created_at: str
+    sample_urls: list[str] = []
+    urls_analyzed: int = 0
+    urls_failed: int = 0

@@ -33,7 +33,7 @@ const AI_MODELS = [
 ];
 
 interface ScrapeFormProps {
-  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string, brandProfile?: BrandProfileData) => void;
+  onSubmit: (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string, brandProfile?: BrandProfileData, compareMode?: boolean) => void;
   isLoading: boolean;
 }
 
@@ -47,6 +47,7 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
   const [reasoningEffort, setReasoningEffort] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [selectedBrandId, setSelectedBrandId] = useState("");
+  const [compareMode, setCompareMode] = useState(false);
 
   useEffect(() => {
     const savedBrand = localStorage.getItem("selected_brand_id");
@@ -103,6 +104,19 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
+    if (compareMode) {
+      onSubmit(
+        url.trim(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        firecrawlApiKey.trim() || undefined,
+        undefined,
+        true,
+      );
+      return;
+    }
     const brandProfile = selectedBrandId ? getSelectedProfile() : undefined;
     onSubmit(
       url.trim(),
@@ -112,8 +126,11 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
       apiKey.trim() && reasoningEffort ? reasoningEffort : undefined,
       firecrawlApiKey.trim() || undefined,
       brandProfile || undefined,
+      false,
     );
   };
+
+  const compareDisabled = compareMode && !firecrawlApiKey.trim();
 
   return (
     <Card>
@@ -125,13 +142,30 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <BrandManager
-            apiKey={apiKey}
-            aiModel={aiModel}
-            firecrawlApiKey={firecrawlApiKey || undefined}
-            selectedBrandId={selectedBrandId}
-            onBrandChange={setSelectedBrandId}
-          />
+          <label className="flex items-start gap-2 rounded-md border border-dashed p-3 cursor-pointer hover:bg-muted/30">
+            <input
+              type="checkbox"
+              checked={compareMode}
+              onChange={(e) => setCompareMode(e.target.checked)}
+              disabled={isLoading}
+              className="mt-0.5"
+            />
+            <div className="flex-1">
+              <span className="text-sm font-medium">對比模式</span>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                同一 URL 同時用 Firecrawl + Playwright 擷取，並排顯示兩個版本嘅原始萃取結果（唔行 AI 後處理）。需要 Firecrawl API Key。
+              </p>
+            </div>
+          </label>
+          {!compareMode && (
+            <BrandManager
+              apiKey={apiKey}
+              aiModel={aiModel}
+              firecrawlApiKey={firecrawlApiKey || undefined}
+              selectedBrandId={selectedBrandId}
+              onBrandChange={setSelectedBrandId}
+            />
+          )}
           <div className="space-y-2">
             <label htmlFor="url" className="text-sm font-medium">
               Product URL
@@ -146,41 +180,50 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
               disabled={isLoading}
             />
           </div>
+          {!compareMode && (
+            <div className="space-y-2">
+              <label htmlFor="model" className="text-sm font-medium">
+                Product Model (optional)
+              </label>
+              <Input
+                id="model"
+                type="text"
+                placeholder="e.g. RT-BE58U"
+                value={productModel}
+                onChange={(e) => setProductModel(e.target.value)}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Override auto-detected model number for file naming.
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
-            <label htmlFor="model" className="text-sm font-medium">
-              Product Model (optional)
-            </label>
-            <Input
-              id="model"
-              type="text"
-              placeholder="e.g. RT-BE58U"
-              value={productModel}
-              onChange={(e) => setProductModel(e.target.value)}
-              disabled={isLoading}
-            />
-            <p className="text-xs text-muted-foreground">
-              Override auto-detected model number for file naming.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => setShowFirecrawl(!showFirecrawl)}
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-            >
-              <svg
-                className={`h-3 w-3 transition-transform ${showFirecrawl ? "rotate-90" : ""}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
+            {!compareMode && (
+              <button
+                type="button"
+                onClick={() => setShowFirecrawl(!showFirecrawl)}
+                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              Firecrawl (optional)
-            </button>
-            {showFirecrawl && (
-              <div className="space-y-2 pl-4 border-l-2 border-muted">
+                <svg
+                  className={`h-3 w-3 transition-transform ${showFirecrawl ? "rotate-90" : ""}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                Firecrawl (optional)
+              </button>
+            )}
+            {(showFirecrawl || compareMode) && (
+              <div className={`space-y-2 ${compareMode ? "" : "pl-4 border-l-2 border-muted"}`}>
+                {compareMode && (
+                  <label htmlFor="firecrawlApiKey" className="text-sm font-medium">
+                    Firecrawl API Key（必填）
+                  </label>
+                )}
                 <Input
                   id="firecrawlApiKey"
                   type="password"
@@ -195,6 +238,7 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
               </div>
             )}
           </div>
+          {!compareMode && (
           <div className="space-y-2">
             <button
               type="button"
@@ -268,9 +312,10 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
               </div>
             )}
           </div>
+          )}
           <Button
             type="submit"
-            disabled={isLoading || !url.trim()}
+            disabled={isLoading || !url.trim() || compareDisabled}
             className="w-full"
           >
             {isLoading ? (
@@ -297,6 +342,8 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
                 </svg>
                 Processing...
               </>
+            ) : compareMode ? (
+              "開始對比"
             ) : (
               "Start Scraping"
             )}

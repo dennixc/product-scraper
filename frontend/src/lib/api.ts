@@ -18,12 +18,30 @@ export interface ProductResult {
   source_url: string;
 }
 
+export interface CompareEngineResult {
+  product_name: string;
+  product_model: string;
+  summary: string;
+  description: string;
+  description_html: string;
+  elapsed_ms: number;
+  error: string | null;
+}
+
+export interface CompareResult {
+  firecrawl: CompareEngineResult | null;
+  playwright: CompareEngineResult | null;
+  source_url: string;
+}
+
 export interface ScrapeStatus {
   job_id: string;
   status: "processing" | "awaiting_review" | "completed" | "failed";
   progress: string | null;
   result: ProductResult | null;
   error: string | null;
+  compare_result?: CompareResult | null;
+  mode?: "normal" | "compare";
 }
 
 export interface BrandProfileData {
@@ -47,6 +65,35 @@ export interface StoredBrandProfile extends BrandProfileData {
 export interface BrandLearnResponse extends BrandProfileData {
   urls_analyzed: number;
   urls_failed: number;
+}
+
+export async function listBrands(): Promise<StoredBrandProfile[]> {
+  const res = await fetch(`${API_BASE}/api/brands`);
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res, "讀取品牌失敗"));
+  }
+  return res.json();
+}
+
+export async function saveBrand(profile: StoredBrandProfile): Promise<StoredBrandProfile> {
+  const res = await fetch(`${API_BASE}/api/brands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile),
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res, "儲存品牌失敗"));
+  }
+  return res.json();
+}
+
+export async function deleteBrand(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/brands/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(await extractErrorDetail(res, "刪除品牌失敗"));
+  }
 }
 
 export async function learnBrand(
@@ -95,6 +142,24 @@ export async function submitScrapeJob(
   });
   if (!res.ok) {
     throw new Error(await extractErrorDetail(res, "提交失敗"));
+  }
+  return res.json();
+}
+
+export async function submitCompareJob(
+  url: string,
+  firecrawlApiKey?: string,
+): Promise<{ job_id: string; status: string }> {
+  const res = await fetch(`${API_BASE}/api/scrape/compare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url,
+      firecrawl_api_key: firecrawlApiKey || null,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res, "提交對比失敗"));
   }
   return res.json();
 }

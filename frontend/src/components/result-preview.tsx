@@ -13,7 +13,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import type { ProductResult } from "@/lib/api";
+import type { ProductResult, CompareResult, CompareEngineResult } from "@/lib/api";
 import { translateResult, type TranslateResponse } from "@/lib/api";
 
 const INLINE_STYLES: Record<string, string> = {
@@ -71,12 +71,139 @@ function htmlToText(html: string): string {
 type TranslationState = "original" | "en" | "zh-TW";
 
 interface ResultPreviewProps {
-  result: ProductResult;
-  downloadUrl: string;
-  jobId: string;
+  result?: ProductResult;
+  downloadUrl?: string;
+  jobId?: string;
+  compareResult?: CompareResult;
 }
 
-export function ResultPreview({ result, downloadUrl, jobId }: ResultPreviewProps) {
+function plainTextLength(html: string): number {
+  if (!html) return 0;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const text = doc.body.textContent || "";
+  return text.replace(/\s+/g, " ").trim().length;
+}
+
+function CompareCard({ engine, data }: { engine: string; data: CompareEngineResult | null }) {
+  const [view, setView] = useState<"preview" | "source">("preview");
+  if (!data) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{engine}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">無資料</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const seconds = (data.elapsed_ms / 1000).toFixed(1);
+  const charCount = plainTextLength(data.description_html);
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base">{engine}</CardTitle>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+            <span>{seconds}s</span>
+            <span>·</span>
+            <span>{charCount} 字</span>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {data.error ? (
+          <p className="text-sm text-destructive">{data.error}</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-[3rem_1fr] gap-y-1.5 gap-x-2 text-sm">
+              <span className="font-medium text-muted-foreground">名稱</span>
+              <span className="truncate">{data.product_name || "—"}</span>
+              <span className="font-medium text-muted-foreground">型號</span>
+              <span className="font-mono">{data.product_model || "—"}</span>
+            </div>
+            {data.summary && (
+              <p className="text-sm text-muted-foreground border-l-2 border-muted pl-3">
+                {data.summary}
+              </p>
+            )}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Description HTML</span>
+                <div className="flex rounded-md border">
+                  <button
+                    type="button"
+                    onClick={() => setView("preview")}
+                    className={`px-2.5 py-0.5 text-xs font-medium rounded-l-md transition-colors ${
+                      view === "preview" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    }`}
+                  >
+                    預覽
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView("source")}
+                    className={`px-2.5 py-0.5 text-xs font-medium rounded-r-md transition-colors ${
+                      view === "source" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    }`}
+                  >
+                    原始碼
+                  </button>
+                </div>
+              </div>
+              {!data.description_html ? (
+                <p className="text-sm text-muted-foreground italic">（空）</p>
+              ) : view === "preview" ? (
+                <div
+                  className="prose prose-sm max-w-none dark:prose-invert max-h-[480px] overflow-y-auto rounded-md border p-3"
+                  dangerouslySetInnerHTML={{ __html: data.description_html }}
+                />
+              ) : (
+                <pre className="text-xs bg-muted p-3 rounded-md overflow-auto whitespace-pre-wrap break-all max-h-[480px]">
+                  {data.description_html}
+                </pre>
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function ResultPreview({ result, downloadUrl, jobId, compareResult }: ResultPreviewProps) {
+  if (compareResult) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="py-4">
+            <div className="text-sm">
+              <span className="font-medium text-muted-foreground">來源：</span>
+              <a
+                href={compareResult.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-1 text-primary underline hover:no-underline break-all"
+              >
+                {compareResult.source_url}
+              </a>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              對比模式：兩個引擎嘅原始萃取結果（未經 AI 後處理）。長度差異反映 fetch 層面嘅內容差別。
+            </p>
+          </CardContent>
+        </Card>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CompareCard engine="Firecrawl" data={compareResult.firecrawl} />
+          <CompareCard engine="Playwright" data={compareResult.playwright} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!result || !downloadUrl || !jobId) return null;
   const [htmlView, setHtmlView] = useState<"preview" | "text" | "source" | "styled">("preview");
   const [shoplineView, setShoplineView] = useState<"preview" | "text" | "source">("preview");
   const [htmlCopied, setHtmlCopied] = useState(false);

@@ -6,6 +6,7 @@ import { ResultPreview } from "@/components/result-preview";
 import { ReviewPanel } from "@/components/review-panel";
 import {
   submitScrapeJob,
+  submitCompareJob,
   getJobStatus,
   getDownloadUrl,
   submitReview,
@@ -44,7 +45,7 @@ export default function Home() {
     return m > 0 ? `${m}:${sec.toString().padStart(2, "0")}` : `${sec}s`;
   };
 
-  const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string, brandProfile?: BrandProfileData) => {
+  const handleSubmit = async (url: string, productModel?: string, apiKey?: string, aiModel?: string, reasoningEffort?: string, firecrawlApiKey?: string, brandProfile?: BrandProfileData, compareMode?: boolean) => {
     setIsLoading(true);
     setError(null);
     setStatus(null);
@@ -52,7 +53,9 @@ export default function Home() {
     setFinalElapsed(null);
 
     try {
-      const response = await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort, firecrawlApiKey, brandProfile);
+      const response = compareMode
+        ? await submitCompareJob(url, firecrawlApiKey)
+        : await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort, firecrawlApiKey, brandProfile);
       setJobId(response.job_id);
       setPollTrigger((n) => n + 1);
     } catch (err) {
@@ -143,8 +146,10 @@ export default function Home() {
   };
 
   const result = status?.result;
-  const isReviewing = status?.status === "awaiting_review" && !!result;
-  const isCompleted = status?.status === "completed" && !!result;
+  const isCompareMode = status?.mode === "compare";
+  const isReviewing = status?.status === "awaiting_review" && !!result && !isCompareMode;
+  const isCompleted = status?.status === "completed" && !!result && !isCompareMode;
+  const isCompareCompleted = status?.status === "completed" && isCompareMode && !!status.compare_result;
 
   return (
     <main className="min-h-screen bg-background">
@@ -238,6 +243,11 @@ export default function Home() {
             downloadUrl={getDownloadUrl(jobId)}
             jobId={jobId}
           />
+        )}
+
+        {/* Compare Results — shown when compare job completes */}
+        {isCompareCompleted && status.compare_result && (
+          <ResultPreview compareResult={status.compare_result} />
         )}
       </div>
     </main>

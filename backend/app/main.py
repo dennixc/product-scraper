@@ -3,7 +3,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import scraper
+from app.routers import scraper, brands
 from app.utils.cleanup import start_cleanup_task
 
 @asynccontextmanager
@@ -24,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(scraper.router)
+app.include_router(brands.router)
 
 @app.get("/health")
 async def health():

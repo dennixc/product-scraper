@@ -9,7 +9,14 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { learnBrand, type StoredBrandProfile, type BrandProfileData } from "@/lib/api";
+import {
+  learnBrand,
+  listBrands,
+  saveBrand,
+  deleteBrand,
+  type StoredBrandProfile,
+  type BrandProfileData,
+} from "@/lib/api";
 
 const STORAGE_KEY = "brand_profiles";
 const SELECTED_KEY = "selected_brand_id";
@@ -69,9 +76,19 @@ export function BrandManager({
   const [isLearning, setIsLearning] = useState(false);
   const [learnError, setLearnError] = useState<string | null>(null);
   const [learnSuccess, setLearnSuccess] = useState<string | null>(null);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   useEffect(() => {
     setProfiles(loadProfiles());
+    listBrands()
+      .then((remote) => {
+        setProfiles(remote);
+        saveProfiles(remote);
+        setSyncWarning(null);
+      })
+      .catch(() => {
+        setSyncWarning("後端同步失敗，使用本機緩存。新增/刪除可能未同步到雲端。");
+      });
   }, []);
 
   const handleSelectBrand = (id: string) => {
@@ -123,9 +140,20 @@ export function BrandManager({
       handleSelectBrand(profile.id);
       setNewName("");
       setNewUrls("");
+
+      let saveWarning = "";
+      try {
+        await saveBrand(profile);
+        setSyncWarning(null);
+      } catch (err) {
+        saveWarning = `（雲端同步失敗：${err instanceof Error ? err.message : "未知錯誤"}）`;
+        setSyncWarning("品牌已儲存喺本機，但同步到後端失敗。");
+      }
+
       setLearnSuccess(
         `${profile.name} 學習完成！分析咗 ${result.urls_analyzed} 個頁面` +
-          (result.urls_failed > 0 ? `（${result.urls_failed} 個失敗）` : "")
+          (result.urls_failed > 0 ? `（${result.urls_failed} 個失敗）` : "") +
+          saveWarning
       );
     } catch (err) {
       setLearnError(err instanceof Error ? err.message : "學習失敗");
@@ -134,12 +162,20 @@ export function BrandManager({
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const updated = profiles.filter((p) => p.id !== id);
     setProfiles(updated);
     saveProfiles(updated);
     if (selectedBrandId === id) {
       handleSelectBrand("");
+    }
+    try {
+      await deleteBrand(id);
+      setSyncWarning(null);
+    } catch (err) {
+      setSyncWarning(
+        `本機刪除成功，但同步到後端失敗：${err instanceof Error ? err.message : "未知錯誤"}`
+      );
     }
   };
 
@@ -178,6 +214,9 @@ export function BrandManager({
           <p className="text-xs text-muted-foreground">
             將使用已學習嘅品牌結構，跳過 AI 頁面分析步驟
           </p>
+        )}
+        {syncWarning && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">{syncWarning}</p>
         )}
       </div>
 

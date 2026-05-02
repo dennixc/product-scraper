@@ -1,12 +1,17 @@
 import gc
 import re
+import time
 import uuid
 import os
 import asyncio
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from bs4 import BeautifulSoup
-from app.models.schemas import ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction, TranslateRequest, TranslateResponse, BrandLearnRequest, BrandLearnResponse
+from app.models.schemas import (
+    ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction,
+    TranslateRequest, TranslateResponse, BrandLearnRequest, BrandLearnResponse,
+    CompareRequest, CompareResult, CompareEngineResult,
+)
 from app.utils.background import (
     create_job, get_job, update_job,
     set_job_internal, get_job_internal, clear_job_internal,
@@ -434,3 +439,112 @@ def _clear_job_result(job_id: str):
     job = get_job(job_id)
     if job:
         job.result = None
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Compare mode — fetch the same URL via Firecrawl and Playwright, return
+# both raw extractions side by side. No AI extractor / cleaner runs so the
+# diff reflects fetch-layer differences only.
+# ─────────────────────────────────────────────────────────────────────
+
+_COMPARE_TIMEOUT = 600  # seconds
+
+
+async def _run_firecrawl_compare_side(url: str, api_key: str | None) -> CompareEngineResult:
+    t0 = time.monotonic()
+    if not api_key:
+        return CompareEngineResult(error="未提供 Firecrawl API Key", elapsed_ms=0)
+    try:
+        fc = await fetch_with_firecrawl(url, api_key)
+        if not fc:
+            return CompareEngineResult(
+                error="Firecrawl 無回應或內容過短",
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
+            )
+        soup = BeautifulSoup(fc["html"], 'lxml')
+        data = extract_all(soup, url)
+        del soup
+        gc.collect()
+        return CompareEngineResult(
+            product_name=data.get("product_name", ""),
+            product_model=data.get("product_model", ""),
+            summary=data.get("summary", ""),
+            description=data.get("description", ""),
+            description_html=data.get("description_html", ""),
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+        )
+    except Exception as e:
+        return CompareEngineResult(
+            error=f"Firecrawl 失敗：{e}",
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+        )
+
+
+async def _run_playwright_compare_side(url: str) -> CompareEngineResult:
+    t0 = time.monotonic()
+    try:
+        html = await fetch_with_playwright(url)
+        if not html:
+            return CompareEngineResult(
+                error="Playwright 無回應",
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
+            )
+        soup = BeautifulSoup(html, 'lxml')
+        data = extract_all(soup, url)
+        del soup, html
+        gc.collect()
+        return CompareEngineResult(
+            product_name=data.get("product_name", ""),
+            product_model=data.get("product_model", ""),
+            summary=data.get("summary", ""),
+            description=data.get("description", ""),
+            description_html=data.get("description_html", ""),
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+        )
+    except Exception as e:
+        return CompareEngineResult(
+            error=f"Playwright 失敗：{e}",
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+        )
+
+
+async def _execute_compare_job(job_id: str, url: str, firecrawl_api_key: str | None):
+    update_job(job_id, progress="同時用 Firecrawl + Playwright 擷取中...", mode="compare")
+    fc_res, pw_res = await asyncio.gather(
+        _run_firecrawl_compare_side(url, firecrawl_api_key),
+        _run_playwright_compare_side(url),
+        return_exceptions=False,
+    )
+    compare_result = CompareResult(firecrawl=fc_res, playwright=pw_res, source_url=url)
+    update_job(job_id, status="completed", progress=None, compare_result=compare_result, mode="compare")
+
+
+async def run_compare_job(job_id: str, url: str, firecrawl_api_key: str | None):
+    try:
+        update_job(job_id, progress="Waiting in queue...", mode="compare")
+        async with _scrape_semaphore:
+            try:
+                await asyncio.wait_for(
+                    _execute_compare_job(job_id, url, firecrawl_api_key),
+                    timeout=_COMPARE_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                update_job(job_id, status="failed", error=f"對比執行超時（超過 {_COMPARE_TIMEOUT // 60} 分鐘）", progress=None)
+            except asyncio.CancelledError:
+                update_job(job_id, status="failed", error="工作已取消", progress=None)
+    except asyncio.CancelledError:
+        update_job(job_id, status="failed", error="工作已取消", progress=None)
+    except Exception as e:
+        update_job(job_id, status="failed", error=str(e), progress=None)
+    finally:
+        clear_job_task(job_id)
+
+
+@router.post("/scrape/compare")
+async def submit_compare(request: CompareRequest):
+    job_id = str(uuid.uuid4())
+    create_job(job_id)
+    update_job(job_id, mode="compare")
+    task = asyncio.create_task(run_compare_job(job_id, str(request.url), request.firecrawl_api_key))
+    set_job_task(job_id, task)
+    return {"job_id": job_id, "status": "processing"}
