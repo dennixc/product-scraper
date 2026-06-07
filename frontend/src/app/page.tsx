@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { ScrapeForm } from "@/components/scrape-form";
 import { ResultPreview } from "@/components/result-preview";
 import { ReviewPanel } from "@/components/review-panel";
+import { useEnv } from "@/lib/mode";
 import {
   submitScrapeJob,
   submitCompareJob,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/api";
 
 export default function Home() {
+  const { env, setEnv } = useEnv();
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<ScrapeStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -54,8 +56,8 @@ export default function Home() {
 
     try {
       const response = compareMode
-        ? await submitCompareJob(url, firecrawlApiKey)
-        : await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort, firecrawlApiKey, brandProfile);
+        ? await submitCompareJob(url, firecrawlApiKey, env)
+        : await submitScrapeJob(url, productModel, apiKey, aiModel, reasoningEffort, firecrawlApiKey, brandProfile, env);
       setJobId(response.job_id);
       setPollTrigger((n) => n + 1);
     } catch (err) {
@@ -153,15 +155,54 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-background">
+      {/* Test-mode banner */}
+      {env === "test" && (
+        <div className="sticky top-0 z-50 border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200">
+          ⚠️ 測試模式 — 新學嘅 brand 同實驗功能唔會影響正式版
+        </div>
+      )}
+
       <div className="mx-auto max-w-4xl px-4 py-8">
         {/* Header */}
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold tracking-tight">
-            商品描述提取器
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            從廠商網站提取商品描述同規格，直接貼入 Shopline。
-          </p>
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div className="flex-1 text-center">
+            <h1 className="text-3xl font-bold tracking-tight">
+              商品描述提取器
+            </h1>
+            <p className="mt-2 text-muted-foreground">
+              從廠商網站提取商品描述同規格，直接貼入 Shopline。
+            </p>
+          </div>
+        </div>
+
+        {/* Env switcher */}
+        <div className="mb-6 flex justify-end">
+          <div className="inline-flex rounded-md border bg-muted/30 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setEnv("prod")}
+              disabled={isLoading}
+              className={`rounded-sm px-3 py-1 transition-colors ${
+                env === "prod"
+                  ? "bg-background font-medium shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              } disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              正式
+            </button>
+            <button
+              type="button"
+              onClick={() => setEnv("test")}
+              disabled={isLoading}
+              className={`rounded-sm px-3 py-1 transition-colors ${
+                env === "test"
+                  ? "bg-amber-200 font-medium shadow-sm dark:bg-amber-900"
+                  : "text-muted-foreground hover:text-foreground"
+              } disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              測試
+            </button>
+          </div>
         </div>
 
         {/* Form */}

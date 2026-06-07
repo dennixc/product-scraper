@@ -30,3 +30,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Local brand profile data
+backend/data/

@@ -1,5 +1,7 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export type Env = "prod" | "test";
+
 async function extractErrorDetail(res: Response, fallback: string): Promise<string> {
   try {
     const body = await res.json();
@@ -42,6 +44,7 @@ export interface ScrapeStatus {
   error: string | null;
   compare_result?: CompareResult | null;
   mode?: "normal" | "compare";
+  env?: Env;
 }
 
 export interface BrandProfileData {
@@ -60,6 +63,7 @@ export interface StoredBrandProfile extends BrandProfileData {
   sample_urls: string[];
   urls_analyzed: number;
   urls_failed: number;
+  source?: Env | null;
 }
 
 export interface BrandLearnResponse extends BrandProfileData {
@@ -67,16 +71,16 @@ export interface BrandLearnResponse extends BrandProfileData {
   urls_failed: number;
 }
 
-export async function listBrands(): Promise<StoredBrandProfile[]> {
-  const res = await fetch(`${API_BASE}/api/brands`);
+export async function listBrands(env: Env = "prod"): Promise<StoredBrandProfile[]> {
+  const res = await fetch(`${API_BASE}/api/brands?env=${env}`);
   if (!res.ok) {
     throw new Error(await extractErrorDetail(res, "讀取品牌失敗"));
   }
   return res.json();
 }
 
-export async function saveBrand(profile: StoredBrandProfile): Promise<StoredBrandProfile> {
-  const res = await fetch(`${API_BASE}/api/brands`, {
+export async function saveBrand(profile: StoredBrandProfile, env: Env = "prod"): Promise<StoredBrandProfile> {
+  const res = await fetch(`${API_BASE}/api/brands?env=${env}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(profile),
@@ -87,8 +91,8 @@ export async function saveBrand(profile: StoredBrandProfile): Promise<StoredBran
   return res.json();
 }
 
-export async function deleteBrand(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/brands/${id}`, {
+export async function deleteBrand(id: string, env: Env = "prod"): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/brands/${id}?env=${env}`, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) {
@@ -125,7 +129,9 @@ export async function submitScrapeJob(
   aiModel?: string,
   reasoningEffort?: string,
   firecrawlApiKey?: string,
-  brandProfile?: BrandProfileData
+  brandProfile?: BrandProfileData,
+  env: Env = "prod",
+  featureFlags?: Record<string, boolean>,
 ): Promise<{ job_id: string; status: string }> {
   const res = await fetch(`${API_BASE}/api/scrape`, {
     method: "POST",
@@ -138,6 +144,8 @@ export async function submitScrapeJob(
       reasoning_effort: reasoningEffort || null,
       firecrawl_api_key: firecrawlApiKey || null,
       brand_profile: brandProfile || null,
+      env,
+      feature_flags: featureFlags || {},
     }),
   });
   if (!res.ok) {
@@ -149,6 +157,7 @@ export async function submitScrapeJob(
 export async function submitCompareJob(
   url: string,
   firecrawlApiKey?: string,
+  env: Env = "prod",
 ): Promise<{ job_id: string; status: string }> {
   const res = await fetch(`${API_BASE}/api/scrape/compare`, {
     method: "POST",
@@ -156,6 +165,7 @@ export async function submitCompareJob(
     body: JSON.stringify({
       url,
       firecrawl_api_key: firecrawlApiKey || null,
+      env,
     }),
   });
   if (!res.ok) {

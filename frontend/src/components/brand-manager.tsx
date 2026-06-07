@@ -16,29 +16,31 @@ import {
   deleteBrand,
   type StoredBrandProfile,
   type BrandProfileData,
+  type Env,
 } from "@/lib/api";
+import { useEnv } from "@/lib/mode";
 
-const STORAGE_KEY = "brand_profiles";
-const SELECTED_KEY = "selected_brand_id";
+const STORAGE_KEY = (env: Env) => `brand_profiles_${env}`;
+const SELECTED_KEY = (env: Env) => `selected_brand_id_${env}`;
 
-function loadProfiles(): StoredBrandProfile[] {
+function loadProfiles(env: Env): StoredBrandProfile[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY(env));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveProfiles(profiles: StoredBrandProfile[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+function saveProfiles(profiles: StoredBrandProfile[], env: Env) {
+  localStorage.setItem(STORAGE_KEY(env), JSON.stringify(profiles));
 }
 
-export function getSelectedProfile(): BrandProfileData | null {
+export function getSelectedProfile(env: Env): BrandProfileData | null {
   try {
-    const id = localStorage.getItem(SELECTED_KEY);
+    const id = localStorage.getItem(SELECTED_KEY(env));
     if (!id) return null;
-    const profiles = loadProfiles();
+    const profiles = loadProfiles(env);
     const p = profiles.find((b) => b.id === id);
     if (!p) return null;
     return {
@@ -69,6 +71,7 @@ export function BrandManager({
   selectedBrandId,
   onBrandChange,
 }: BrandManagerProps) {
+  const { env } = useEnv();
   const [profiles, setProfiles] = useState<StoredBrandProfile[]>([]);
   const [showManager, setShowManager] = useState(false);
   const [newName, setNewName] = useState("");
@@ -79,24 +82,24 @@ export function BrandManager({
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   useEffect(() => {
-    setProfiles(loadProfiles());
-    listBrands()
+    setProfiles(loadProfiles(env));
+    listBrands(env)
       .then((remote) => {
         setProfiles(remote);
-        saveProfiles(remote);
+        saveProfiles(remote, env);
         setSyncWarning(null);
       })
       .catch(() => {
         setSyncWarning("後端同步失敗，使用本機緩存。新增/刪除可能未同步到雲端。");
       });
-  }, []);
+  }, [env]);
 
   const handleSelectBrand = (id: string) => {
     onBrandChange(id);
     if (id) {
-      localStorage.setItem(SELECTED_KEY, id);
+      localStorage.setItem(SELECTED_KEY(env), id);
     } else {
-      localStorage.removeItem(SELECTED_KEY);
+      localStorage.removeItem(SELECTED_KEY(env));
     }
   };
 
@@ -136,14 +139,14 @@ export function BrandManager({
 
       const updated = [...profiles.filter((p) => p.name !== profile.name), profile];
       setProfiles(updated);
-      saveProfiles(updated);
+      saveProfiles(updated, env);
       handleSelectBrand(profile.id);
       setNewName("");
       setNewUrls("");
 
       let saveWarning = "";
       try {
-        await saveBrand(profile);
+        await saveBrand(profile, env);
         setSyncWarning(null);
       } catch (err) {
         saveWarning = `（雲端同步失敗：${err instanceof Error ? err.message : "未知錯誤"}）`;
@@ -162,15 +165,20 @@ export function BrandManager({
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, source?: Env | null) => {
+    // 喺 test env 想刪 prod-only brand，提示用戶切返 prod
+    if (env === "test" && source === "prod") {
+      setSyncWarning("呢個係正式品牌，切返「正式」模式先可以刪除。");
+      return;
+    }
     const updated = profiles.filter((p) => p.id !== id);
     setProfiles(updated);
-    saveProfiles(updated);
+    saveProfiles(updated, env);
     if (selectedBrandId === id) {
       handleSelectBrand("");
     }
     try {
-      await deleteBrand(id);
+      await deleteBrand(id, env);
       setSyncWarning(null);
     } catch (err) {
       setSyncWarning(
@@ -197,6 +205,7 @@ export function BrandManager({
             {profiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
+                {env === "test" && p.source ? ` [${p.source === "prod" ? "正式" : "測試"}]` : ""}
               </option>
             ))}
           </select>
@@ -236,8 +245,21 @@ export function BrandManager({
                     className="flex items-center justify-between rounded-md border px-3 py-2"
                   >
                     <div className="min-w-0">
-                      <span className="text-sm font-medium">{p.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{p.name}</span>
+                        {env === "test" && p.source && (
+                          <span
+                            className={`rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${
+                              p.source === "test"
+                                ? "bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {p.source === "test" ? "測試" : "正式"}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
                         {p.sample_urls.length} URLs
                         {" | "}
                         {new Date(p.created_at).toLocaleDateString("zh-TW")}
@@ -253,7 +275,7 @@ export function BrandManager({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDelete(p.id)}
+                      onClick={() => handleDelete(p.id, p.source)}
                       className="shrink-0 text-destructive hover:text-destructive"
                     >
                       刪除
@@ -265,7 +287,14 @@ export function BrandManager({
 
             {/* Add new brand */}
             <div className="space-y-2 border-t pt-3">
-              <p className="text-sm font-medium">新增品牌</p>
+              <p className="text-sm font-medium">
+                新增品牌
+                {env === "test" && (
+                  <span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">
+                    （只會存入測試環境）
+                  </span>
+                )}
+              </p>
               <Input
                 placeholder="品牌名稱（例如 ASUS）"
                 value={newName}

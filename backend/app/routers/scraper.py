@@ -8,10 +8,11 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from bs4 import BeautifulSoup
 from app.models.schemas import (
-    ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction,
+    Env, ScrapeRequest, ScrapeStatus, ProductResult, ReviewAction,
     TranslateRequest, TranslateResponse, BrandLearnRequest, BrandLearnResponse,
     CompareRequest, CompareResult, CompareEngineResult,
 )
+from app.config.feature_flags import resolve_flags
 from app.utils.background import (
     create_job, get_job, update_job,
     set_job_internal, get_job_internal, clear_job_internal,
@@ -42,14 +43,15 @@ def _get_job_timeout(reasoning_effort: str | None) -> tuple[int, int]:
     timeout = _EFFORT_TIMEOUTS.get(reasoning_effort or "", 480)
     return timeout, timeout // 60
 
-async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None):
+async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None, env: Env = "prod", flags: dict | None = None):
     timeout_secs, timeout_mins = _get_job_timeout(reasoning_effort)
+    flags = flags or {}
     try:
-        update_job(job_id, progress="Waiting in queue...")
+        update_job(job_id, progress="Waiting in queue...", env=env)
         async with _scrape_semaphore:
             try:
                 await asyncio.wait_for(
-                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key, brand_profile),
+                    _execute_scrape_job(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key, brand_profile, env, flags),
                     timeout=timeout_secs,
                 )
             except asyncio.TimeoutError:
@@ -63,9 +65,10 @@ async def run_scrape_job(job_id: str, url: str, product_model: str | None, api_k
     finally:
         clear_job_task(job_id)
 
-async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None):
+async def _execute_scrape_job(job_id: str, url: str, product_model: str | None, api_key: str | None = None, ai_model: str | None = None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None, env: Env = "prod", flags: dict | None = None):
+    flags = flags or {}
     if api_key:
-        await _execute_with_ai(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key, brand_profile)
+        await _execute_with_ai(job_id, url, product_model, api_key, ai_model, reasoning_effort, firecrawl_api_key, brand_profile, env, flags)
     else:
         await _execute_legacy(job_id, url, product_model, firecrawl_api_key)
 
@@ -111,8 +114,9 @@ async def _execute_legacy(job_id: str, url: str, product_model: str | None, fire
         update_job(job_id, status="failed", error=str(e), progress=None)
 
 
-async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api_key: str, ai_model: str | None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None):
+async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api_key: str, ai_model: str | None, reasoning_effort: str | None = None, firecrawl_api_key: str | None = None, brand_profile: dict | None = None, env: Env = "prod", flags: dict | None = None):
     """AI-guided path — uses AI to analyze page structure and choose optimal strategy."""
+    flags = flags or {}
     try:
         html = None
         raw_html_for_internal = None
@@ -209,6 +213,7 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
                 api_key,
                 ai_model,
                 analysis=analysis, reasoning_effort=reasoning_effort,
+                flags=flags,
             )
 
         model = product_model or raw_data.get("product_model", "product")
@@ -222,6 +227,8 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
             analysis=analysis,
             product_name=raw_data.get("product_name", ""),
             product_model=model,
+            env=env,
+            flags=flags,
         )
         del html, raw_html_for_internal
         gc.collect()
@@ -284,6 +291,7 @@ async def _refine_extraction(job_id: str, instructions: str):
         reasoning_effort = internal.get("reasoning_effort")
         analysis = internal.get("analysis")
         product_name = internal.get("product_name", "")
+        flags = internal.get("flags", {})
 
         if not raw_html:
             update_job(job_id, status="failed", error="Raw HTML not available for refine", progress=None)
@@ -301,6 +309,7 @@ async def _refine_extraction(job_id: str, instructions: str):
             ai_desc = await clean_description_with_ai(
                 ai_desc, product_name, api_key, ai_model,
                 analysis=analysis, reasoning_effort=reasoning_effort,
+                flags=flags,
             )
 
         # Update the review result with refined description
@@ -390,7 +399,9 @@ async def submit_scrape(request: ScrapeRequest):
     job_id = str(uuid.uuid4())
     create_job(job_id)
     bp = request.brand_profile.model_dump() if request.brand_profile else None
-    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model, request.reasoning_effort, request.firecrawl_api_key, bp))
+    flags = resolve_flags(request.env, request.feature_flags)
+    update_job(job_id, env=request.env)
+    task = asyncio.create_task(run_scrape_job(job_id, str(request.url), request.product_model, request.api_key, request.ai_model, request.reasoning_effort, request.firecrawl_api_key, bp, request.env, flags))
     set_job_task(job_id, task)
     return {"job_id": job_id, "status": "processing"}
 
@@ -508,24 +519,24 @@ async def _run_playwright_compare_side(url: str) -> CompareEngineResult:
         )
 
 
-async def _execute_compare_job(job_id: str, url: str, firecrawl_api_key: str | None):
-    update_job(job_id, progress="同時用 Firecrawl + Playwright 擷取中...", mode="compare")
+async def _execute_compare_job(job_id: str, url: str, firecrawl_api_key: str | None, env: Env = "prod"):
+    update_job(job_id, progress="同時用 Firecrawl + Playwright 擷取中...", mode="compare", env=env)
     fc_res, pw_res = await asyncio.gather(
         _run_firecrawl_compare_side(url, firecrawl_api_key),
         _run_playwright_compare_side(url),
         return_exceptions=False,
     )
     compare_result = CompareResult(firecrawl=fc_res, playwright=pw_res, source_url=url)
-    update_job(job_id, status="completed", progress=None, compare_result=compare_result, mode="compare")
+    update_job(job_id, status="completed", progress=None, compare_result=compare_result, mode="compare", env=env)
 
 
-async def run_compare_job(job_id: str, url: str, firecrawl_api_key: str | None):
+async def run_compare_job(job_id: str, url: str, firecrawl_api_key: str | None, env: Env = "prod"):
     try:
-        update_job(job_id, progress="Waiting in queue...", mode="compare")
+        update_job(job_id, progress="Waiting in queue...", mode="compare", env=env)
         async with _scrape_semaphore:
             try:
                 await asyncio.wait_for(
-                    _execute_compare_job(job_id, url, firecrawl_api_key),
+                    _execute_compare_job(job_id, url, firecrawl_api_key, env),
                     timeout=_COMPARE_TIMEOUT,
                 )
             except asyncio.TimeoutError:
@@ -544,7 +555,7 @@ async def run_compare_job(job_id: str, url: str, firecrawl_api_key: str | None):
 async def submit_compare(request: CompareRequest):
     job_id = str(uuid.uuid4())
     create_job(job_id)
-    update_job(job_id, mode="compare")
-    task = asyncio.create_task(run_compare_job(job_id, str(request.url), request.firecrawl_api_key))
+    update_job(job_id, mode="compare", env=request.env)
+    task = asyncio.create_task(run_compare_job(job_id, str(request.url), request.firecrawl_api_key, request.env))
     set_job_task(job_id, task)
     return {"job_id": job_id, "status": "processing"}

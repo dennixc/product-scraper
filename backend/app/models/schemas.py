@@ -1,6 +1,8 @@
 from pydantic import BaseModel, HttpUrl
 from typing import Literal
 
+Env = Literal["prod", "test"]
+
 
 class BrandProfile(BaseModel):
     needs_javascript: bool = False
@@ -19,6 +21,8 @@ class ScrapeRequest(BaseModel):
     reasoning_effort: str | None = None
     firecrawl_api_key: str | None = None
     brand_profile: BrandProfile | None = None
+    env: Env = "prod"
+    feature_flags: dict[str, bool] = {}
 
 class ProductResult(BaseModel):
     product_name: str
@@ -48,6 +52,7 @@ class CompareResult(BaseModel):
 class CompareRequest(BaseModel):
     url: HttpUrl
     firecrawl_api_key: str | None = None
+    env: Env = "prod"
 
 
 class ScrapeStatus(BaseModel):
@@ -58,6 +63,7 @@ class ScrapeStatus(BaseModel):
     error: str | None = None
     compare_result: CompareResult | None = None
     mode: Literal["normal", "compare"] = "normal"
+    env: Env = "prod"
 
 class ReviewAction(BaseModel):
     action: Literal["confirm", "refine"]
@@ -79,6 +85,7 @@ class BrandLearnRequest(BaseModel):
     api_key: str
     ai_model: str | None = None
     firecrawl_api_key: str | None = None
+    env: Env = "prod"
 
 
 class BrandLearnResponse(BaseModel):
@@ -99,3 +106,4 @@ class StoredBrandProfile(BrandProfile):
     sample_urls: list[str] = []
     urls_analyzed: int = 0
     urls_failed: int = 0
+    source: Env | None = None  # 只喺 test env list response 入面填，prod env 留 None

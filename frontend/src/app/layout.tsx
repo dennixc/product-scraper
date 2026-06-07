@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { EnvProvider } from "@/lib/mode";
 
 export const metadata: Metadata = {
   title: "Product Data Scraper",
@@ -14,7 +15,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased">
+        <EnvProvider>{children}</EnvProvider>
+      </body>
     </html>
   );
 }

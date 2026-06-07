@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { BrandManager, getSelectedProfile } from "@/components/brand-manager";
 import type { BrandProfileData } from "@/lib/api";
+import { useEnv } from "@/lib/mode";
 
 const FIRECRAWL_KEY_STORAGE_KEY = "firecrawl_api_key";
 const API_KEY_STORAGE_KEY = "openrouter_api_key";
@@ -38,6 +39,7 @@ interface ScrapeFormProps {
 }
 
 export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
+  const { env } = useEnv();
   const [url, setUrl] = useState("");
   const [productModel, setProductModel] = useState("");
   const [firecrawlApiKey, setFirecrawlApiKey] = useState("");
@@ -49,9 +51,13 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
   const [selectedBrandId, setSelectedBrandId] = useState("");
   const [compareMode, setCompareMode] = useState(false);
 
+  // Reload per-env selected brand whenever env changes
   useEffect(() => {
-    const savedBrand = localStorage.getItem("selected_brand_id");
-    if (savedBrand) setSelectedBrandId(savedBrand);
+    const savedBrand = localStorage.getItem(`selected_brand_id_${env}`);
+    setSelectedBrandId(savedBrand || "");
+  }, [env]);
+
+  useEffect(() => {
     const savedFcKey = localStorage.getItem(FIRECRAWL_KEY_STORAGE_KEY);
     if (savedFcKey) setFirecrawlApiKey(savedFcKey);
     const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
@@ -117,7 +123,7 @@ export function ScrapeForm({ onSubmit, isLoading }: ScrapeFormProps) {
       );
       return;
     }
-    const brandProfile = selectedBrandId ? getSelectedProfile() : undefined;
+    const brandProfile = selectedBrandId ? getSelectedProfile(env) : undefined;
     onSubmit(
       url.trim(),
       productModel.trim() || undefined,
