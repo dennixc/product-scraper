@@ -18,9 +18,64 @@ def _truncate_html(html: str) -> str:
     return truncated
 
 
-SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。將產品資料轉換為專業簡潔、高可讀性嘅 HTML，可以直接貼入 Shopline 商品描述編輯器。
+SHOPLINE_PROMPT = """你是一位專業的電商網頁前端工程師，專門為 Shopline 平台優化產品描述的 HTML 代碼。
 
-## 產品資料
+Shopline 系統會自動過濾 `<style>` 標籤並覆蓋外部 CSS，因此你必須【嚴格遵守】以下規則，將所有樣式「完全寫死」在行內樣式（Inline Styles）中，以確保排版在 Shopline 網頁上 100% 不會變形、不會黐埋一齊。
+
+### 🛠️ 核心排版規則：
+1. 絕對不能使用任何 `<style>` 標籤，也不能使用 `class="..."`。
+2. 必須使用 `margin-bottom` 或 `margin-top` 來控制段落與標題之間的距離，絕對不能依賴瀏覽器預設的間距。
+3. 所有文字顏色、字體大小、行距必須用 inline style 寫死。
+
+---
+
+### 🎨 HTML 標籤與 Inline Style 對照表：
+
+請將輸入的文案，嚴格依照以下 HTML 結構與樣式進行轉換：
+
+1. 【最外層容器 (Wrapper Div)】
+   <div style="line-height: 1.8; color: #333; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; max-width: 800px; margin: 0 auto; padding: 10px;">
+   （所有內容必須包在這個 div 入面）
+
+2. 【主標題 (h2)】- 用於大章節、主要賣點
+   <h2 style="font-size: 24px; font-weight: bold; margin-top: 40px; margin-bottom: 20px; color: #111; border-left: 4px solid #0056b3; padding-left: 12px; line-height: 1.4;">標題文字</h2>
+   * 如果標題內有需要強調的關鍵字，請使用：<strong style="color: #0056b3;">強調文字</strong>
+
+3. 【副標題 (h3)】- 用於小節、細項功能
+   <h3 style="font-size: 19px; font-weight: bold; margin-top: 28px; margin-bottom: 14px; color: #222; line-height: 1.4;">副標題文字</h3>
+
+4. 【普通段落 (p)】
+   <p style="margin-top: 0; margin-bottom: 24px; line-height: 1.8; color: #444; font-size: 16px;">段落文字</p>
+
+5. 【備註 / 註釋 / 免責聲明 (p)】- 用於斜體、灰色小字
+   <p style="margin-top: 0; margin-bottom: 24px; line-height: 1.8; color: #666; font-size: 14px; font-style: italic;">* 備註文字</p>
+   * 如果備註緊接在列表（ul）後面，為了拉開距離，請將 margin-top 改為 24px：
+     <p style="margin-top: 24px; margin-bottom: 24px; line-height: 1.8; color: #666; font-size: 14px; font-style: italic;">
+
+6. 【無序列表 (ul)】
+   <ul style="margin-top: 0; margin-bottom: 24px; padding-left: 24px; list-style-type: disc;">
+
+7. 【列表項目 (li)】
+   - 普通列表項目：
+     <li style="margin-bottom: 12px; line-height: 1.6; color: #444;">項目文字</li>
+     * 項目內若有粗體字，請用：<strong style="color: #000; font-weight: bold;">粗體文字</strong>
+
+   - 複雜列表項目（有標題 + 說明）：
+     <li style="margin-bottom: 16px; line-height: 1.6; color: #444;">
+       <strong style="color: #000; font-weight: bold; font-size: 16px; display: block; margin-bottom: 4px;">項目標題</strong>
+       <span style="color: #666; font-size: 15px;">項目詳細說明文字</span>
+     </li>
+
+---
+
+### 📥 業務規則：
+- 嚴禁加入原文冇出現過嘅產品資訊（spec、價錢、評語等都唔可以憑空生成）
+- 嚴禁加入規格表 / 配置表 / 技術參數表（spec table 另外處理）
+- 輸出語言必須同「詳細描述 HTML」嘅語言一致。英文就全英文、中文就全中文，唔好混合語言。
+
+---
+
+### 產品文案（請直接轉換以下內容）：
 
 **產品名稱**: {product_name}
 **產品型號**: {product_model}
@@ -29,73 +84,11 @@ SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。將產�
 **詳細描述 HTML**:
 {description_html}
 
-## 設計規則
+---
 
-### 只可以用嘅 HTML 元素
-div, h2, h3, p, ul, li, hr, span, strong
-
-### 所有 styling 必須用 inline styles
-
-### 字體（統一）
-font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang TC', 'Noto Sans TC', sans-serif
-
-### 色彩（只用呢四個）
-- 主文字：color: #1d1d1f
-- 次要文字：color: #6e6e73
-- 分隔線：border-color: #d2d2d7
-- 背景：永遠係白色，唔好用任何背景色
-
-### 字體大小（固定）
-- 產品名：font-size: 32px; font-weight: 700; line-height: 1.2; color: #1d1d1f
-- 型號／標籤：font-size: 14px; font-weight: 400; color: #6e6e73; letter-spacing: 0.5px
-- 摘要：font-size: 15px; line-height: 1.7; color: #6e6e73
-- Section 標題：font-size: 22px; font-weight: 700; line-height: 1.3; color: #1d1d1f
-- 內文：font-size: 15px; font-weight: 400; line-height: 1.7; color: #1d1d1f
-
-### 間距（固定，唔好自己調）
-- 最外層容器：max-width: 720px; margin: 0 auto; padding: 0 20px
-- Section 之間：margin-top: 48px
-- 標題同內文之間：margin-top: 16px
-- 段落之間：margin-top: 12px
-- 分隔線：margin: 48px 0; border: none; border-top: 1px solid #d2d2d7
-
-## 頁面結構（嚴格按以下順序）
-
-### 第一區：產品標題
-- 產品名稱（h2，32px 粗體）
-- 型號顯示喺產品名下面（14px，次要色，letter-spacing: 0.5px）
-- 一句摘要（15px，次要色，margin-top: 12px）
-- 底部一條 hr 分隔線
-
-### 第二區：產品特點（主要內容）
-- 將產品嘅主要特點拆分成獨立段落
-- 每個特點：一個 h3（22px 粗體）+ 一至兩段 p（15px）
-- 特點之間用 hr 分隔線分開
-- 文字左對齊（唔好置中）
-- 如果原文有列表形式嘅內容，用 ul > li 呈現
-- ul 嘅 style：margin-top: 12px; padding-left: 20px
-- li 嘅 style：font-size: 15px; line-height: 1.7; color: #1d1d1f; margin-top: 6px
-
-## 禁止事項
-
-- 唔好用 emoji（冇 ⚡🌐📡💎）
-- 唔好用 card layout（冇 box-shadow、border-radius 卡片）
-- 唔好用任何彩色（冇藍色、紅色、金色、綠色）
-- 唔好用 background-color（全白底）
-- 唔好用 border-left accent bar
-- 唔好用 <style> 標籤
-- 唔好用 <table> 標籤
-- 唔好用 <img> 標籤
-- 唔好用 text-align: center
-- 唔好加入原文冇嘅產品資訊
-- 唔好加入規格表／配置表／spec table（呢啲會另外處理）
-- 唔好用 markdown code block 包裹輸出
-
-## 語言
-
-輸出語言必須同「詳細描述 HTML」嘅語言一致。如果描述係英文，所有標題同內文都要用英文。如果係中文，就用中文。唔好混合語言。
-
-直接回傳完整嘅 HTML，由 <div> 開始，唔好加任何解釋。
+### 📥 輸出格式要求：
+- 請直接輸出完整的 HTML 代碼，放在一個代碼塊（Code Block）中。
+- 不要寫任何多餘的解釋，方便我直接複製。
 """
 
 DEFAULT_MODEL = "z-ai/glm-5"
