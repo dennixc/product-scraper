@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from bs4 import BeautifulSoup, Tag
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,42 @@ def _truncate_html(html: str) -> str:
     if last_close > MAX_HTML_CHARS * 0.8:
         truncated = truncated[:last_close + 1]
     return truncated
+
+
+def _is_empty_spacer(tag: Tag) -> bool:
+    """True if tag is an empty <p>/<br> already acting as a spacer."""
+    if tag.name == "br":
+        return True
+    if tag.name == "p" and not tag.get_text(strip=True):
+        return True
+    return False
+
+
+def _add_shopline_spacing(html: str) -> str:
+    """Insert <p><br></p> between top-level sibling blocks for Shopline editor.
+
+    Shopline 嘅 editor 會 strip / override 我哋輸出嘅 inline margin styling，導致
+    section 視覺逼埋。物理上加空段落做佔位 editor 唔會 collapse。
+
+    Skip 規則：相鄰任意一邊係 <hr>（已經係視覺分隔）或已經係空 spacer。
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    container: Tag = soup.find("div") or soup
+    children = [c for c in container.children if isinstance(c, Tag)]
+    if len(children) < 2:
+        return str(soup)
+
+    for i in range(len(children) - 1):
+        cur, nxt = children[i], children[i + 1]
+        if cur.name == "hr" or nxt.name == "hr":
+            continue
+        if _is_empty_spacer(cur) or _is_empty_spacer(nxt):
+            continue
+        spacer = soup.new_tag("p")
+        spacer.append(soup.new_tag("br"))
+        cur.insert_after(spacer)
+
+    return str(soup)
 
 
 SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。將產品資料轉換為專業簡潔、高可讀性嘅 HTML，可以直接貼入 Shopline 商品描述編輯器。
@@ -109,11 +146,13 @@ async def generate_shopline_html(
     api_key: str,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    flags: dict | None = None,
 ) -> str:
     """用 OpenRouter AI 生成 Shopline 兼容嘅帶 inline styles HTML。
 
     失敗時 return 空 string（graceful fallback）。
     """
+    flags = flags or {}
     client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
@@ -147,7 +186,10 @@ async def generate_shopline_html(
                     result = result[3:]
                 if result.endswith("```"):
                     result = result[:-3]
-                return result.strip()
+                result = result.strip()
+                if flags.get("add_shopline_spacing"):
+                    result = _add_shopline_spacing(result)
+                return result
             return ""
         except Exception as e:
             last_error = e

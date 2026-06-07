@@ -9,10 +9,10 @@ from app.models.schemas import Env
 
 # Schema: flag_name → {"prod": bool, "test": bool, "description": str}
 FEATURE_FLAGS: dict[str, dict] = {
-    "use_experimental_cleaner_prompt": {
+    "add_shopline_spacing": {
         "prod": False,
         "test": True,
-        "description": "示範 flag — 切換 ai_cleaner 嘅 prompt variant，驗證 plumbing 通到。",
+        "description": "喺 Shopline HTML top-level block 之間插 <p><br></p>，避免貼入 Shopline editor 之後段落逼埋。",
     },
 }
 

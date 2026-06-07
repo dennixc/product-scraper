@@ -40,10 +40,6 @@ CLEAN_PROMPT = """你係一個商品描述篩選器。以下係從「{product_na
 {raw_html}
 """
 
-# 示範 experimental prompt — feature flag `use_experimental_cleaner_prompt`
-# 開啟時會用呢個。內容暫時同 CLEAN_PROMPT 一樣 + 標記，俾用戶之後試新嘢。
-CLEAN_PROMPT_EXPERIMENTAL = "[experimental v1] " + CLEAN_PROMPT
-
 DEFAULT_MODEL = "z-ai/glm-5"
 
 
@@ -69,9 +65,8 @@ async def clean_description_with_ai(
     如果 AI call 失敗，return 原本嘅 raw_html（graceful fallback）。
     """
     try:
-        flags = flags or {}
-        template = CLEAN_PROMPT_EXPERIMENTAL if flags.get("use_experimental_cleaner_prompt") else CLEAN_PROMPT
-        prompt_text = template.format(
+        # flags reserved for future experiments; currently no cleaner-specific flag
+        prompt_text = CLEAN_PROMPT.format(
             product_name=product_name,
             raw_html=_truncate_html(raw_html),
         )

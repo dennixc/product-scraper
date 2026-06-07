@@ -249,7 +249,8 @@ async def _execute_with_ai(job_id: str, url: str, product_model: str | None, api
 async def _finalize_job(job_id: str, description_html: str, product_name: str,
                         product_model: str, summary: str, description: str,
                         source_url: str, api_key: str, ai_model: str | None,
-                        reasoning_effort: str | None = None):
+                        reasoning_effort: str | None = None,
+                        flags: dict | None = None):
     """Generate Shopline HTML and package results."""
     try:
         update_job(job_id, status="processing", progress="正在生成 Shopline HTML...")
@@ -259,6 +260,7 @@ async def _finalize_job(job_id: str, description_html: str, product_name: str,
                 product_name, product_model, summary,
                 description_html, api_key, ai_model,
                 reasoning_effort=reasoning_effort,
+                flags=flags,
             )
 
         result = ProductResult(
@@ -346,6 +348,7 @@ async def submit_review(job_id: str, review: ReviewAction):
             api_key=internal.get("api_key", ""),
             ai_model=internal.get("ai_model"),
             reasoning_effort=internal.get("reasoning_effort"),
+            flags=internal.get("flags", {}),
         ))
         update_job(job_id, status="processing", progress="正在生成 Shopline HTML...")
         return {"status": "processing"}
