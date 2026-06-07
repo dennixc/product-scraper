@@ -8,13 +8,8 @@ and (later) remove the flag once both branches converge.
 from app.models.schemas import Env
 
 # Schema: flag_name → {"prod": bool, "test": bool, "description": str}
-FEATURE_FLAGS: dict[str, dict] = {
-    "add_shopline_spacing": {
-        "prod": False,
-        "test": True,
-        "description": "喺 Shopline HTML top-level block 之間插 <p><br></p>，避免貼入 Shopline editor 之後段落逼埋。",
-    },
-}
+# Empty by default — registry exists so future experiments can plug in.
+FEATURE_FLAGS: dict[str, dict] = {}
 
 
 def get_defaults(env: Env) -> dict[str, bool]:
