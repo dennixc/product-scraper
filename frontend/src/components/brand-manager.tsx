@@ -82,16 +82,20 @@ export function BrandManager({
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setProfiles(loadProfiles(env));
     listBrands(env)
       .then((remote) => {
+        if (cancelled) return;
         setProfiles(remote);
         saveProfiles(remote, env);
         setSyncWarning(null);
       })
       .catch(() => {
+        if (cancelled) return;
         setSyncWarning("後端同步失敗，使用本機緩存。新增/刪除可能未同步到雲端。");
       });
+    return () => { cancelled = true; };
   }, [env]);
 
   const handleSelectBrand = (id: string) => {
@@ -171,6 +175,9 @@ export function BrandManager({
       setSyncWarning("呢個係正式品牌，切返「正式」模式先可以刪除。");
       return;
     }
+    // Snapshot state for rollback if the backend call fails
+    const previousProfiles = profiles;
+    const previousSelected = selectedBrandId;
     const updated = profiles.filter((p) => p.id !== id);
     setProfiles(updated);
     saveProfiles(updated, env);
@@ -181,8 +188,14 @@ export function BrandManager({
       await deleteBrand(id, env);
       setSyncWarning(null);
     } catch (err) {
+      // Backend rejected the delete — restore local state so UI matches truth
+      setProfiles(previousProfiles);
+      saveProfiles(previousProfiles, env);
+      if (previousSelected === id) {
+        handleSelectBrand(id);
+      }
       setSyncWarning(
-        `本機刪除成功，但同步到後端失敗：${err instanceof Error ? err.message : "未知錯誤"}`
+        `刪除失敗，已還原：${err instanceof Error ? err.message : "未知錯誤"}`
       );
     }
   };

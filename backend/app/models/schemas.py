@@ -85,7 +85,6 @@ class BrandLearnRequest(BaseModel):
     api_key: str
     ai_model: str | None = None
     firecrawl_api_key: str | None = None
-    env: Env = "prod"
 
 
 class BrandLearnResponse(BaseModel):

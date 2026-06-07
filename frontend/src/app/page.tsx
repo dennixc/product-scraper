@@ -155,12 +155,15 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-background">
-      {/* Test-mode banner */}
-      {env === "test" && (
-        <div className="sticky top-0 z-50 border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200">
-          ⚠️ 測試模式 — 新學嘅 brand 同實驗功能唔會影響正式版
-        </div>
-      )}
+      {/* Test-mode banner — env is lazy-init from localStorage; SSR sees "prod",
+          client may see "test", suppress the resulting hydration warning. */}
+      <div suppressHydrationWarning>
+        {env === "test" && (
+          <div className="sticky top-0 z-50 border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200">
+            ⚠️ 測試模式 — 新學嘅 brand 同實驗功能唔會影響正式版
+          </div>
+        )}
+      </div>
 
       <div className="mx-auto max-w-4xl px-4 py-8">
         {/* Header */}
@@ -175,8 +178,9 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Env switcher */}
-        <div className="mb-6 flex justify-end">
+        {/* Env switcher — active/inactive style depends on env (lazy-init from
+            localStorage), suppress the hydration warning for the toggle row. */}
+        <div className="mb-6 flex justify-end" suppressHydrationWarning>
           <div className="inline-flex rounded-md border bg-muted/30 p-0.5 text-xs">
             <button
               type="button"
