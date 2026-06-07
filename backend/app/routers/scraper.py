@@ -260,7 +260,6 @@ async def _finalize_job(job_id: str, description_html: str, product_name: str,
                 product_name, product_model, summary,
                 description_html, api_key, ai_model,
                 reasoning_effort=reasoning_effort,
-                flags=flags,
             )
 
         result = ProductResult(

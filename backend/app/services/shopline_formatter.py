@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from bs4 import BeautifulSoup, Tag
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -19,90 +18,7 @@ def _truncate_html(html: str) -> str:
     return truncated
 
 
-_ALLOWED_TAGS = {"h2", "h3", "p", "ul", "li", "strong"}
-_STRIP_TAGS = {"hr", "style", "script", "br", "div", "span"}
-
-
-def _clean_ai_output(html: str) -> str:
-    """Normalize AI output: unwrap container, drop noise tags, strip style/class attrs.
-
-    Defensive — AI doesn't always follow the new prompt's restrictions (legacy
-    inline styles or hr separators can leak through).
-    """
-    soup = BeautifulSoup(html, "html.parser")
-
-    # If the AI wrapped everything in a single top-level <div>, unwrap it.
-    top_tags = [c for c in soup.children if isinstance(c, Tag)]
-    if len(top_tags) == 1 and top_tags[0].name == "div":
-        top_tags[0].unwrap()
-
-    # Drop noise tags entirely (extract removes element + content).
-    # br/div/span are unwrapped instead (preserve inner text).
-    for tag in soup.find_all(["hr", "style", "script"]):
-        tag.decompose()
-    for tag in soup.find_all(["br", "div", "span"]):
-        tag.unwrap()
-
-    # Remove empty heading/paragraph blocks left after unwrap/decompose.
-    for tag in soup.find_all(["p", "h2", "h3", "li"]):
-        if not tag.get_text(strip=True):
-            tag.decompose()
-
-    # Strip style/class on every remaining element.
-    for tag in soup.find_all(True):
-        tag.attrs.pop("style", None)
-        tag.attrs.pop("class", None)
-
-    return str(soup).strip()
-
-
-WRAPPER_STYLE_BLOCK = """<style>
-  .shopline-custom-product-desc h2 {
-    font-size: 1.6em;
-    margin-top: 1.8em !important;
-    margin-bottom: 0.8em !important;
-    font-weight: bold;
-    color: #111;
-  }
-  .shopline-custom-product-desc h3 {
-    font-size: 1.25em;
-    margin-top: 1.5em !important;
-    margin-bottom: 0.6em !important;
-    font-weight: bold;
-    color: #222;
-  }
-  .shopline-custom-product-desc p {
-    margin-top: 0 !important;
-    margin-bottom: 1.2em !important;
-  }
-  .shopline-custom-product-desc ul {
-    margin-top: 0 !important;
-    margin-bottom: 1.2em !important;
-    padding-left: 20px !important;
-    list-style-type: disc !important;
-  }
-  .shopline-custom-product-desc li {
-    margin-bottom: 0.6em !important;
-    line-height: 1.5;
-  }
-  .shopline-custom-product-desc strong {
-    font-weight: bold;
-  }
-</style>"""
-
-
-def _wrap_shopline_styles(html: str) -> str:
-    """Wrap cleaned AI content in the scoped class container + style block."""
-    return (
-        '<div class="shopline-custom-product-desc" '
-        'style="line-height: 1.6; color: #333; font-family: sans-serif;">'
-        f'{WRAPPER_STYLE_BLOCK}'
-        f'{html}'
-        '</div>'
-    )
-
-
-SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。將以下產品資料轉換為純 semantic HTML。輸出之後會自動包入帶 CSS class 嘅 styled container（你唔需要關心 styling）。
+SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。將產品資料轉換為專業簡潔、高可讀性嘅 HTML，可以直接貼入 Shopline 商品描述編輯器。
 
 ## 產品資料
 
@@ -113,36 +29,73 @@ SHOPLINE_PROMPT = """你係一個 Shopline 商品描述 HTML 生成器。將以�
 **詳細描述 HTML**:
 {description_html}
 
-## 輸出規則（嚴格）
+## 設計規則
 
-- **只可以用呢 6 個 tag**：`h2`, `h3`, `p`, `ul`, `li`, `strong`
-- **唔加任何 `style` 或 `class` attribute**
-- **唔用**：`hr`, `div`, `span`, `br`, `table`, `img`, `style`, `script`
-- **唔包 wrapper container** — 直接由第一個結構元素開始
-- **唔用 markdown code block 包裹**
+### 只可以用嘅 HTML 元素
+div, h2, h3, p, ul, li, hr, span, strong
 
-## 內容結構
+### 所有 styling 必須用 inline styles
 
-1. 第一個 element：`<h2>` 含產品名稱 + 型號（例如 "ASUS RT-BE59"）
-2. 第二個 element：`<p>` 一句摘要（從產品資料嘅「摘要」嚟）
-3. 之後：將詳細描述按主題分 section
-   - `<h2>` 做大 section 標題（例如「性能」「安全」「功能」）
-   - `<h3>` 做 sub-section 標題（個別 feature）
-   - `<p>` 描述段落
-   - `<ul>` + `<li>` 列點
-   - `<strong>` 強調重要字眼
+### 字體（統一）
+font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang TC', 'Noto Sans TC', sans-serif
 
-## 內容禁止事項
+### 色彩（只用呢四個）
+- 主文字：color: #1d1d1f
+- 次要文字：color: #6e6e73
+- 分隔線：border-color: #d2d2d7
+- 背景：永遠係白色，唔好用任何背景色
 
-- 唔加原文冇出現過嘅產品資訊
-- 唔加 spec table / 規格表 / 技術參數表（另外處理）
-- 唔用 emoji（冇 ⚡🌐📡💎）
+### 字體大小（固定）
+- 產品名：font-size: 32px; font-weight: 700; line-height: 1.2; color: #1d1d1f
+- 型號／標籤：font-size: 14px; font-weight: 400; color: #6e6e73; letter-spacing: 0.5px
+- 摘要：font-size: 15px; line-height: 1.7; color: #6e6e73
+- Section 標題：font-size: 22px; font-weight: 700; line-height: 1.3; color: #1d1d1f
+- 內文：font-size: 15px; font-weight: 400; line-height: 1.7; color: #1d1d1f
+
+### 間距（固定，唔好自己調）
+- 最外層容器：max-width: 720px; margin: 0 auto; padding: 0 20px
+- Section 之間：margin-top: 48px
+- 標題同內文之間：margin-top: 16px
+- 段落之間：margin-top: 12px
+- 分隔線：margin: 48px 0; border: none; border-top: 1px solid #d2d2d7
+
+## 頁面結構（嚴格按以下順序）
+
+### 第一區：產品標題
+- 產品名稱（h2，32px 粗體）
+- 型號顯示喺產品名下面（14px，次要色，letter-spacing: 0.5px）
+- 一句摘要（15px，次要色，margin-top: 12px）
+- 底部一條 hr 分隔線
+
+### 第二區：產品特點（主要內容）
+- 將產品嘅主要特點拆分成獨立段落
+- 每個特點：一個 h3（22px 粗體）+ 一至兩段 p（15px）
+- 特點之間用 hr 分隔線分開
+- 文字左對齊（唔好置中）
+- 如果原文有列表形式嘅內容，用 ul > li 呈現
+- ul 嘅 style：margin-top: 12px; padding-left: 20px
+- li 嘅 style：font-size: 15px; line-height: 1.7; color: #1d1d1f; margin-top: 6px
+
+## 禁止事項
+
+- 唔好用 emoji（冇 ⚡🌐📡💎）
+- 唔好用 card layout（冇 box-shadow、border-radius 卡片）
+- 唔好用任何彩色（冇藍色、紅色、金色、綠色）
+- 唔好用 background-color（全白底）
+- 唔好用 border-left accent bar
+- 唔好用 <style> 標籤
+- 唔好用 <table> 標籤
+- 唔好用 <img> 標籤
+- 唔好用 text-align: center
+- 唔好加入原文冇嘅產品資訊
+- 唔好加入規格表／配置表／spec table（呢啲會另外處理）
+- 唔好用 markdown code block 包裹輸出
 
 ## 語言
 
-輸出語言必須同「詳細描述 HTML」一致。英文就全英文、中文就全中文，唔好混合。
+輸出語言必須同「詳細描述 HTML」嘅語言一致。如果描述係英文，所有標題同內文都要用英文。如果係中文，就用中文。唔好混合語言。
 
-直接 output HTML（由第一個 `<h2>` 開始），唔好加任何解釋。
+直接回傳完整嘅 HTML，由 <div> 開始，唔好加任何解釋。
 """
 
 DEFAULT_MODEL = "z-ai/glm-5"
@@ -156,11 +109,10 @@ async def generate_shopline_html(
     api_key: str,
     model: str | None = None,
     reasoning_effort: str | None = None,
-    flags: dict | None = None,
 ) -> str:
-    """用 OpenRouter AI 生成 Shopline semantic HTML，post-process 後包入 CSS scope。
+    """用 OpenRouter AI 生成 Shopline 兼容嘅帶 inline styles HTML。
 
-    失敗時 return 紅色錯誤 div（graceful fallback）。
+    失敗時 return 空 string（graceful fallback）。
     """
     client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -195,9 +147,7 @@ async def generate_shopline_html(
                     result = result[3:]
                 if result.endswith("```"):
                     result = result[:-3]
-                result = result.strip()
-                result = _clean_ai_output(result)
-                return _wrap_shopline_styles(result)
+                return result.strip()
             return ""
         except Exception as e:
             last_error = e
